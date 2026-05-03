@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/session";
 
-function readRequiredEnv(name: "ADMIN_USERNAME" | "ADMIN_PASSWORD") {
+function readRequiredEnv(name: "ADMIN_PASSWORD") {
   const value = process.env[name];
   if (!value) {
     throw new Error(`${name} is not configured`);
@@ -19,10 +19,13 @@ function safeEquals(a: string, b: string) {
   return timingSafeEqual(aBuf, bBuf);
 }
 
-export function verifyAdminCredentials(username: string, password: string) {
-  const expectedUsername = readRequiredEnv("ADMIN_USERNAME");
+export function verifyAdminCredentials(password: string) {
   const expectedPassword = readRequiredEnv("ADMIN_PASSWORD");
-  return safeEquals(username, expectedUsername) && safeEquals(password, expectedPassword);
+  return safeEquals(password, expectedPassword);
+}
+
+export function getAdminDisplayName() {
+  return process.env.ADMIN_USERNAME || "admin";
 }
 
 export function getSessionFromCookies() {

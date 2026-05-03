@@ -13,7 +13,6 @@ export function LoginForm() {
     setError("");
 
     const form = new FormData(event.currentTarget);
-    const username = String(form.get("username") ?? "");
     const password = String(form.get("password") ?? "");
 
     const response = await fetch("/api/auth/login", {
@@ -21,7 +20,7 @@ export function LoginForm() {
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ password })
     });
 
     if (!response.ok) {
@@ -38,11 +37,7 @@ export function LoginForm() {
 
   return (
     <form className="card stack" onSubmit={handleSubmit}>
-      <h1 style={{ margin: 0 }}>摄影师登录</h1>
-      <label className="stack">
-        <span>用户名</span>
-        <input className="input" name="username" required />
-      </label>
+      <h1 style={{ margin: 0 }}>后台登录</h1>
       <label className="stack">
         <span>密码</span>
         <input className="input" type="password" name="password" required />
@@ -51,7 +46,7 @@ export function LoginForm() {
         <p style={{ margin: 0, color: "#af2934" }}>{error}</p>
       ) : (
         <p style={{ margin: 0 }} className="muted">
-          首版使用单账号密码，具体凭证由环境变量管理。
+          当前为密码登录，凭证由环境变量 `ADMIN_PASSWORD` 管理。
         </p>
       )}
       <button className="btn btn-primary" disabled={isPending} type="submit">

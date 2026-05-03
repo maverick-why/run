@@ -1,0 +1,307 @@
+import { createHash, randomBytes } from "node:crypto";
+import { type GrantPlan, type SubmissionRecord, type YinbaoIssueResult } from "@/lib/run-voucher";
+
+type YinbaoConfig = {
+  appId: string;
+  appKey: string;
+  areaId: string;
+  userAgent: string;
+  couponUid40: string;
+  couponUid20: string;
+  couponName40: string;
+  couponName20: string;
+  requestTimeoutMs: number;
+  mockMode: boolean;
+};
+
+type PospalResponse<T = unknown> = {
+  status?: string;
+  errorCode?: number | string;
+  messages?: string[] | string;
+  data?: T;
+};
+
+type AddedCouponResult = {
+  codeExpiredDate?: string;
+};
+
+type CouponPromotion = {
+  promotionCouponUid?: string | number;
+  name?: string;
+  enable?: string | number;
+};
+
+function readYinbaoConfig(): YinbaoConfig {
+  const appId = process.env.POSPAL_APP_ID || "";
+  const appKey = process.env.POSPAL_APP_KEY || "";
+  const areaId = process.env.POSPAL_AREA_ID || "1";
+  const userAgent = process.env.POSPAL_USER_AGENT || "openApi";
+  const couponUid40 = process.env.POSPAL_COUPON_UID_40 || "";
+  const couponUid20 = process.env.POSPAL_COUPON_UID_20 || "";
+  const couponName40 = process.env.POSPAL_COUPON_NAME_40 || "";
+  const couponName20 = process.env.POSPAL_COUPON_NAME_20 || "";
+  const requestTimeoutMs = Number(process.env.YINBAO_TIMEOUT_MS || "10000");
+  const mockMode = process.env.YINBAO_MOCK_MODE === "true";
+  return {
+    appId,
+    appKey,
+    areaId,
+    userAgent,
+    couponUid40,
+    couponUid20,
+    couponName40,
+    couponName20,
+    requestTimeoutMs,
+    mockMode
+  };
+}
+
+function buildCouponUidSequence(grantPlan: GrantPlan, config: YinbaoConfig) {
+  const unitPack = [config.couponUid40, config.couponUid40, config.couponUid20];
+  const sequence: string[] = [];
+  for (let i = 0; i < grantPlan.packCount; i += 1) {
+    sequence.push(...unitPack);
+  }
+  return sequence;
+}
+
+function genCouponCode() {
+  const rand = randomBytes(4).toString("hex").toUpperCase();
+  const tail = Date.now().toString().slice(-8);
+  return `RV${tail}${rand}`;
+}
+
+function stringifyBody(body: Record<string, unknown>) {
+  return JSON.stringify(body);
+}
+
+function computeSignatureV3(appId: string, appKey: string, timestamp: string, body: string) {
+  return createHash("md5").update(`${appId}${appKey}${timestamp}${body}`, "utf8").digest("hex").toUpperCase();
+}
+
+function getMessage(messages: unknown) {
+  if (Array.isArray(messages)) {
+    return messages.join(" | ");
+  }
+  if (typeof messages === "string") {
+    return messages;
+  }
+  return "";
+}
+
+function normalizeName(name: string) {
+  return name.trim();
+}
+
+function toUidString(uid: string | number | undefined) {
+  if (uid === undefined || uid === null) return "";
+  return String(uid).trim();
+}
+
+async function postPospal<T>(config: YinbaoConfig, path: string, bodyObj: Record<string, unknown>) {
+  const timestamp = String(Date.now());
+  const body = stringifyBody(bodyObj);
+  const signature = computeSignatureV3(config.appId, config.appKey, timestamp, body);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), config.requestTimeoutMs);
+
+  try {
+    const response = await fetch(`https://openapi${config.areaId}.pospal.cn/openinterface${path}`, {
+      method: "POST",
+      headers: {
+        appId: config.appId,
+        UserAgent: config.userAgent,
+        "time-stamp": timestamp,
+        "data-signature-v3": signature,
+        "Content-Type": "application/json; charset=utf-8"
+      },
+      body,
+      signal: controller.signal
+    });
+
+    const payload = (await response.json().catch(() => null)) as PospalResponse<T> | null;
+    if (!response.ok || !payload) {
+      return {
+        ok: false,
+        message: `银豹接口调用失败（HTTP ${response.status}）`,
+        raw: payload
+      };
+    }
+    if (String(payload.status || "").toLowerCase() !== "success") {
+      return {
+        ok: false,
+        message: getMessage(payload.messages) || `银豹返回失败 errorCode=${payload.errorCode ?? "-"}`,
+        raw: payload
+      };
+    }
+
+    return {
+      ok: true,
+      message: getMessage(payload.messages),
+      data: payload.data,
+      raw: payload
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "银豹接口调用异常",
+      raw: { error }
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function resolveCouponUids(config: YinbaoConfig) {
+  let uid40 = config.couponUid40.trim();
+  let uid20 = config.couponUid20.trim();
+  if (uid40 && uid20) {
+    return { ok: true as const, uid40, uid20 };
+  }
+
+  const name40 = normalizeName(config.couponName40);
+  const name20 = normalizeName(config.couponName20);
+  if ((!uid40 && !name40) || (!uid20 && !name20)) {
+    return {
+      ok: false as const,
+      message:
+        "缺少券规则配置：请配置 POSPAL_COUPON_UID_40/20，或配置 POSPAL_COUPON_NAME_40/20 以自动匹配"
+    };
+  }
+
+  const queryResult = await postPospal<CouponPromotion[]>(config, "/promotionOpenApi/queryCouponPromotions", {});
+  if (!queryResult.ok) {
+    return {
+      ok: false as const,
+      message: `查询银豹优惠券规则失败：${queryResult.message}`,
+      raw: queryResult.raw
+    };
+  }
+
+  const promotions = Array.isArray(queryResult.data) ? queryResult.data : [];
+  if (!uid40) {
+    const matched40 = promotions.find((item) => normalizeName(item.name || "") === name40);
+    uid40 = toUidString(matched40?.promotionCouponUid);
+  }
+  if (!uid20) {
+    const matched20 = promotions.find((item) => normalizeName(item.name || "") === name20);
+    uid20 = toUidString(matched20?.promotionCouponUid);
+  }
+
+  if (!uid40 || !uid20) {
+    return {
+      ok: false as const,
+      message: `未找到券规则UID，请确认名称精确匹配：40元='${name40}' 20元='${name20}'`,
+      raw: {
+        availableNames: promotions.map((item) => item.name).filter(Boolean)
+      }
+    };
+  }
+
+  return { ok: true as const, uid40, uid20 };
+}
+
+export async function issueVoucherToYinbao(params: {
+  submission: SubmissionRecord;
+  grantPlan: GrantPlan;
+  customerUid?: number;
+}): Promise<YinbaoIssueResult> {
+  const { submission, grantPlan } = params;
+  const config = readYinbaoConfig();
+
+  if (grantPlan.mode !== "voucher") {
+    return {
+      success: true,
+      message: "非代金券发放场景，银豹发券跳过"
+    };
+  }
+
+  if (config.mockMode) {
+    const sequence = [
+      ...Array.from({ length: grantPlan.packCount * 3 }).map(() => ({
+        code: `MOCK${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
+        promotionCouponUid: "mock"
+      }))
+    ];
+    return {
+      success: true,
+      referenceId: `mock-${submission.id}`,
+      message: "YINBAO_MOCK_MODE=true，已使用模拟发券",
+      raw: {
+        customerUid: params.customerUid || submission.customerUid,
+        issuedCoupons: sequence
+      }
+    };
+  }
+
+  const customerUid = params.customerUid || submission.customerUid;
+  if (!customerUid || !Number.isFinite(customerUid)) {
+    return {
+      success: false,
+      message: "缺少 customerUid，无法发券。请在审核时填写银豹会员UID。"
+    };
+  }
+
+  if (!config.appId || !config.appKey) {
+    return {
+      success: false,
+      message: "缺少 POSPAL_APP_ID 或 POSPAL_APP_KEY 配置"
+    };
+  }
+
+  const resolved = await resolveCouponUids(config);
+  if (!resolved.ok) {
+    return { success: false, message: resolved.message, raw: resolved.raw };
+  }
+
+  const couponUidSequence = buildCouponUidSequence(grantPlan, {
+    ...config,
+    couponUid40: resolved.uid40,
+    couponUid20: resolved.uid20
+  });
+  const issuedCoupons: Array<{ code: string; promotionCouponUid: string; codeExpiredDate?: string }> = [];
+
+  for (const promotionCouponUid of couponUidSequence) {
+    const code = genCouponCode();
+    const result = await postPospal<AddedCouponResult>(
+      config,
+      "/promotionOpenApi/promotion/addCouponcode",
+      {
+        code,
+        customerUid,
+        promotionCouponUid
+      }
+    );
+    if (!result.ok) {
+      return {
+        success: false,
+        message: `发券失败（${promotionCouponUid}）：${result.message}`,
+        raw: {
+          customerUid,
+          issuedCoupons,
+          failedOn: {
+            code,
+            promotionCouponUid
+          },
+          response: result.raw
+        }
+      };
+    }
+
+    issuedCoupons.push({
+      code,
+      promotionCouponUid,
+      codeExpiredDate: result.data?.codeExpiredDate
+    });
+  }
+
+  return {
+    success: true,
+    referenceId: `${submission.id}:${customerUid}`,
+    message: `已发放${issuedCoupons.length}张优惠券号`,
+    raw: {
+      customerUid,
+      issuedCoupons
+    }
+  };
+}

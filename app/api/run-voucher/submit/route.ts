@@ -1,0 +1,128 @@
+import { randomUUID } from "node:crypto";
+import { NextRequest, NextResponse } from "next/server";
+import { createCosClient, readCosConfig } from "@/lib/cos";
+import {
+  buildSubmissionKeys,
+  getRunVoucherActivitySlug,
+  normalizeSubmissionMonth,
+  type SubmissionRecord
+} from "@/lib/run-voucher";
+import { resolveImageExtension } from "@/lib/upload";
+
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
+
+function putObject(
+  cos: ReturnType<typeof createCosClient>,
+  params: {
+    Bucket: string;
+    Region: string;
+    Key: string;
+    Body: Buffer | string;
+    ContentType: string;
+  }
+) {
+  return new Promise<void>((resolve, reject) => {
+    cos.putObject(params, (error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+export const runtime = "nodejs";
+
+export async function POST(request: NextRequest) {
+  const formData = await request.formData().catch(() => null);
+  if (!formData) {
+    return NextResponse.json({ success: false, error: "请求格式错误" }, { status: 400 });
+  }
+
+  const name = String(formData.get("name") || "").trim();
+  const contact = String(formData.get("contact") || "").trim();
+  const kmRaw = String(formData.get("km") || "").trim();
+  const screenshot = formData.get("screenshot");
+  const month = normalizeSubmissionMonth(String(formData.get("month") || ""));
+
+  if (!name || !contact || !kmRaw || !(screenshot instanceof File)) {
+    return NextResponse.json(
+      { success: false, error: "缺少必填字段，请检查后重试" },
+      { status: 400 }
+    );
+  }
+
+  if (!screenshot.type.startsWith("image/")) {
+    return NextResponse.json(
+      { success: false, error: "仅支持图片格式截图" },
+      { status: 400 }
+    );
+  }
+
+  if (screenshot.size > MAX_IMAGE_SIZE_BYTES) {
+    return NextResponse.json(
+      { success: false, error: "截图大小不能超过10MB" },
+      { status: 400 }
+    );
+  }
+
+  const km = Number(kmRaw);
+  if (!Number.isFinite(km) || km < 0) {
+    return NextResponse.json({ success: false, error: "跑量数值不合法" }, { status: 400 });
+  }
+
+  let config;
+  try {
+    config = readCosConfig();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "服务配置错误";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+
+  const activitySlug = getRunVoucherActivitySlug();
+  const submissionId = randomUUID();
+  const ext = resolveImageExtension(screenshot.name, screenshot.type);
+  const objectKeys = buildSubmissionKeys(activitySlug, month, ext, submissionId);
+  const screenshotBuffer = Buffer.from(await screenshot.arrayBuffer());
+
+  const record: SubmissionRecord = {
+    id: submissionId,
+    activitySlug,
+    month,
+    name,
+    contact,
+    km,
+    screenshotKey: objectKeys.screenshot,
+    screenshotContentType: screenshot.type || "application/octet-stream",
+    screenshotSize: screenshot.size,
+    submittedAt: new Date().toISOString(),
+    status: "pending"
+  };
+
+  try {
+    const cos = createCosClient(config);
+    await putObject(cos, {
+      Bucket: config.bucket,
+      Region: config.region,
+      Key: objectKeys.screenshot,
+      Body: screenshotBuffer,
+      ContentType: screenshot.type || "application/octet-stream"
+    });
+
+    await putObject(cos, {
+      Bucket: config.bucket,
+      Region: config.region,
+      Key: objectKeys.record,
+      Body: JSON.stringify(record),
+      ContentType: "application/json; charset=utf-8"
+    });
+  } catch {
+    return NextResponse.json(
+      { success: false, error: "提交失败，上传到存储服务时发生错误" },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({ success: true, id: submissionId });
+}

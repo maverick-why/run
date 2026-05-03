@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>海报文案定制</title>
+    <style>
+      :root {
+        --bg: #f6f8fb;
+        --card: #ffffff;
+        --text: #0f1b2d;
+        --muted: #5c6b82;
+        --line: #d9e2ef;
+        --brand: #0f3f87;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "PingFang SC", "Noto Sans SC", "Helvetica Neue", Arial, sans-serif;
+      }
+      .wrap {
+        width: min(960px, 94vw);
+        margin: 26px auto;
+        display: grid;
+        gap: 14px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 16px;
+      }
+      .stack { display: grid; gap: 10px; }
+      .muted { color: var(--muted); font-size: 14px; }
+      .input {
+        width: 100%;
+        height: 40px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0 12px;
+      }
+      .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+      .btn {
+        height: 40px;
+        border-radius: 10px;
+        border: 1px solid transparent;
+        padding: 0 16px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .btn-primary { background: var(--brand); color: #fff; }
+      .btn-secondary { background: #fff; border-color: var(--line); color: var(--text); }
+      .error { color: #b42335; margin: 0; }
+      .ok { color: #0f3f87; margin: 0; }
+      .preview {
+        width: min(100%, 420px);
+        border-radius: 16px;
+        border: 1px solid #d9e2ef;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="card stack">
+        <h1 style="margin: 0">海报文案定制（本地预览版）</h1>
+        <p class="muted" style="margin: 0">仅可定制 4 段文案，其他信息固定不可改。</p>
+
+        <label class="stack">
+          <span>主标题前半句（可定制）</span>
+          <input id="openingPrefix" class="input" maxlength="10" value="不是开业，是" />
+        </label>
+
+        <label class="stack">
+          <span>主标题后半句（最多 8 个汉字；整句含标点总长 ≤ 10）</span>
+          <input id="openingText" class="input" maxlength="8" value="开场" />
+          <span id="openingCount" class="muted"></span>
+          <span id="openingTotalCount" class="muted"></span>
+        </label>
+
+        <label class="stack">
+          <span>嘉宾名（诚邀 XXX）</span>
+          <input id="guestName" class="input" maxlength="12" value="Q" />
+        </label>
+
+        <label class="stack">
+          <span>右侧文案（最多 5 个汉字）</span>
+          <input id="togetherText" class="input" maxlength="10" value="一起开场" />
+          <span id="togetherCount" class="muted"></span>
+        </label>
+
+        <div class="actions">
+          <button id="previewBtn" class="btn btn-primary">预览邀请函</button>
+          <button id="saveBtn" class="btn btn-secondary">确认无误，保存到手机</button>
+        </div>
+
+        <p id="error" class="error"></p>
+        <p id="ok" class="ok"></p>
+      </section>
+
+      <section class="card stack">
+        <strong>邀请函预览</strong>
+        <img id="previewImage" class="preview" alt="邀请函预览图" />
+        <p class="muted" style="margin: 0">手机端如未自动保存，请长按预览图保存到相册。</p>
+      </section>
+    </main>
+
+    <script>
+      const OPENING_TOTAL_LIMIT = 10;
+      const FIXED_DATE = "2026.5.20～2026.5.21";
+      const FIXED_TIME = "14:00～18:00pm";
+      const FIXED_ADDRESS = "深圳 南山 沙河西路 智谷产业园F座 107";
+
+      const openingPrefixEl = document.getElementById("openingPrefix");
+      const openingTextEl = document.getElementById("openingText");
+      const guestNameEl = document.getElementById("guestName");
+      const togetherTextEl = document.getElementById("togetherText");
+      const openingCountEl = document.getElementById("openingCount");
+      const openingTotalCountEl = document.getElementById("openingTotalCount");
+      const togetherCountEl = document.getElementById("togetherCount");
+      const previewImageEl = document.getElementById("previewImage");
+      const errorEl = document.getElementById("error");
+      const okEl = document.getElementById("ok");
+
+      function countChineseChars(text) {
+        const matched = text.match(/[\u4e00-\u9fff]/g);
+        return matched ? matched.length : 0;
+      }
+
+      function countAllChars(text) {
+        return Array.from(text).length;
+      }
+
+      function setMsg(error, ok) {
+        errorEl.textContent = error || "";
+        okEl.textContent = ok || "";
+      }
+
+      function refreshCounters() {
+        const openingPrefix = openingPrefixEl.value.trim();
+        const openingText = openingTextEl.value.trim();
+        const togetherText = togetherTextEl.value.trim();
+        openingCountEl.textContent = `当前汉字数：${countChineseChars(openingText)} / 8`;
+        openingTotalCountEl.textContent = `主标题整句总长度（含标点）：${countAllChars(openingPrefix + openingText)} / 10`;
+        togetherCountEl.textContent = `当前汉字数：${countChineseChars(togetherText)} / 5`;
+      }
+
+      function validateForm() {
+        const openingPrefix = openingPrefixEl.value.trim();
+        const openingText = openingTextEl.value.trim();
+        const guestName = guestNameEl.value.trim();
+        const togetherText = togetherTextEl.value.trim();
+
+        if (!openingPrefix) return "主标题前半句不能为空。";
+        if (!openingText) return "主标题后半句不能为空。";
+        if (countChineseChars(openingText) > 8) return "主标题后半句最多 8 个汉字。";
+        if (countAllChars(openingPrefix + openingText) > OPENING_TOTAL_LIMIT) {
+          return "主标题整句总长度（含标点）不能超过 10 个字符。";
+        }
+        if (!guestName) return "嘉宾名不能为空。";
+        if (guestName.length > 12) return "嘉宾名最多 12 个字符。";
+        if (!togetherText) return "“一起开场”文案不能为空。";
+        if (countChineseChars(togetherText) > 5) return "“一起开场”文案最多 5 个汉字。";
+        return "";
+      }
+
+      function drawPoster(openingPrefix, openingText, guestName, togetherText) {
+        const width = 750;
+        const height = 1334;
+        const scale = 2;
+        const canvas = document.createElement("canvas");
+        canvas.width = width * scale;
+        canvas.height = height * scale;
+        const ctx = canvas.getContext("2d");
+        ctx.scale(scale, scale);
+
+        const topGlow = ctx.createLinearGradient(0, 0, 0, 520);
+        topGlow.addColorStop(0, "#2f2208");
+        topGlow.addColorStop(0.55, "#151515");
+        topGlow.addColorStop(1, "#090a0d");
+
+        ctx.fillStyle = "#090a0d";
+        ctx.fillRect(0, 0, width, height);
+        ctx.fillStyle = topGlow;
+        ctx.fillRect(0, 0, width, 520);
+
+        for (let i = 0; i < 12; i += 1) {
+          const alpha = 0.03 + (i % 3) * 0.02;
+          ctx.fillStyle = `rgba(255, 182, 60, ${alpha})`;
+          ctx.fillRect(i * 64, 20 + (i % 2) * 8, 44, 340);
+        }
+
+        const maskGradient = ctx.createLinearGradient(0, 420, 0, height);
+        maskGradient.addColorStop(0, "rgba(0, 0, 0, 0.08)");
+        maskGradient.addColorStop(0.6, "rgba(0, 0, 0, 0.55)");
+        maskGradient.addColorStop(1, "rgba(0, 0, 0, 0.86)");
+        ctx.fillStyle = maskGradient;
+        ctx.fillRect(0, 360, width, height - 360);
+
+        ctx.fillStyle = "#d7c17a";
+        ctx.font = 'italic 700 34px "Arial Black", "Helvetica Neue", sans-serif';
+        ctx.fillText("CHRONOBREWERY", 52, 84);
+
+        ctx.fillStyle = "#f4f4f4";
+        ctx.textAlign = "center";
+        ctx.font = '700 86px "STSong", "Songti SC", "Noto Serif SC", serif';
+        ctx.fillText(openingPrefix + openingText, width / 2, 515);
+
+        ctx.strokeStyle = "rgba(198, 140, 68, 0.7)";
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(140, 598);
+        ctx.lineTo(width - 140, 598);
+        ctx.stroke();
+
+        ctx.textAlign = "left";
+        ctx.fillStyle = "#e4e4e4";
+        ctx.font = '600 50px "STSong", "Songti SC", "Noto Serif SC", serif';
+        ctx.fillText("诚 邀", 140, 685);
+
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#d6b652";
+        ctx.font = '800 90px "Arial Black", "Helvetica Neue", sans-serif';
+        ctx.fillText(guestName, width / 2, 702);
+
+        ctx.textAlign = "right";
+        ctx.fillStyle = "#f1f1f1";
+        ctx.font = '600 50px "STSong", "Songti SC", "Noto Serif SC", serif';
+        ctx.fillText(togetherText, width - 140, 685);
+
+        ctx.strokeStyle = "rgba(198, 140, 68, 0.7)";
+        ctx.beginPath();
+        ctx.moveTo(140, 760);
+        ctx.lineTo(width - 140, 760);
+        ctx.stroke();
+
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#c8a94c";
+        ctx.font = '700 62px "DIN Alternate", "Arial", sans-serif';
+        ctx.fillText(FIXED_DATE, width / 2, 845);
+
+        ctx.fillStyle = "#dddddd";
+        ctx.font = '700 46px "DIN Alternate", "Arial", sans-serif';
+        ctx.fillText(FIXED_TIME, width / 2, 912);
+
+        ctx.fillStyle = "#e7e7e7";
+        ctx.font = '500 42px "PingFang SC", "Noto Sans SC", sans-serif';
+        ctx.fillText(FIXED_ADDRESS, width / 2, 983);
+
+        ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
+        ctx.fillRect(95, 1060, 130, 170);
+        ctx.fillStyle = "#b8943d";
+        ctx.font = '600 28px "PingFang SC", "Noto Sans SC", sans-serif';
+        ctx.fillText("酒杯示意", 160, 1155);
+
+        ctx.fillStyle = "#f7f7f7";
+        ctx.fillRect(255, 1080, 150, 150);
+        ctx.strokeStyle = "#0f0f0f";
+        ctx.lineWidth = 8;
+        ctx.strokeRect(255, 1080, 150, 150);
+        ctx.strokeStyle = "#222";
+        ctx.lineWidth = 5;
+        for (let i = 0; i < 4; i += 1) {
+          ctx.beginPath();
+          ctx.moveTo(272 + i * 35, 1098);
+          ctx.lineTo(272 + i * 35, 1212);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(272, 1098 + i * 35);
+          ctx.lineTo(388, 1098 + i * 35);
+          ctx.stroke();
+        }
+
+        ctx.textAlign = "left";
+        ctx.fillStyle = "#c8a94c";
+        ctx.font = '700 33px "PingFang SC", "Noto Sans SC", sans-serif';
+        ctx.fillText("领取说明", 440, 1122);
+        ctx.fillStyle = "#cfcfcf";
+        ctx.font = '500 25px "PingFang SC", "Noto Sans SC", sans-serif';
+        ctx.fillText("1. 扫码进入领取页", 440, 1166);
+        ctx.fillText("2. 如未注册会员，请先完成注册", 440, 1206);
+        ctx.fillText("3. 注册完成后，返回海报扫码领取", 440, 1246);
+
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#f0f0f0";
+        ctx.font = '700 40px "Arial Black", "PingFang SC", sans-serif';
+        ctx.fillText("CHRONOBREWERY", width / 2, 1296);
+
+        return canvas.toDataURL("image/png");
+      }
+
+      function canShareImageFile(file) {
+        try {
+          if (typeof navigator.share !== "function" || typeof navigator.canShare !== "function") return false;
+          return navigator.canShare({ files: [file] });
+        } catch {
+          return false;
+        }
+      }
+
+      document.getElementById("previewBtn").addEventListener("click", () => {
+        const err = validateForm();
+        if (err) {
+          setMsg(err, "");
+          return;
+        }
+        const openingPrefix = openingPrefixEl.value.trim();
+        const openingText = openingTextEl.value.trim();
+        const guestName = guestNameEl.value.trim();
+        const togetherText = togetherTextEl.value.trim();
+        const url = drawPoster(openingPrefix, openingText, guestName, togetherText);
+        previewImageEl.src = url;
+        previewImageEl.style.display = "block";
+        setMsg("", "");
+      });
+
+      document.getElementById("saveBtn").addEventListener("click", async () => {
+        if (!previewImageEl.src) {
+          setMsg("请先点击“预览邀请函”。", "");
+          return;
+        }
+        try {
+          const response = await fetch(previewImageEl.src);
+          const blob = await response.blob();
+          const filename = `chronobrewery-invite-${Date.now()}.png`;
+          const file = new File([blob], filename, { type: "image/png" });
+          if (canShareImageFile(file)) {
+            try {
+              await navigator.share({ files: [file], title: "ChronoBrewery 邀请函" });
+              setMsg("", "已打开分享面板，请选择“保存到相册”。");
+            } catch {
+              setMsg("", "已取消分享；你也可以长按预览图保存到相册。");
+            }
+            return;
+          }
+          const a = document.createElement("a");
+          a.href = previewImageEl.src;
+          a.download = filename;
+          a.click();
+          setMsg("", "已触发下载；若手机浏览器未自动保存，请长按预览图保存到相册。");
+        } catch {
+          setMsg("保存失败，请重试。", "");
+        }
+      });
+
+      [openingPrefixEl, openingTextEl, guestNameEl, togetherTextEl].forEach((el) => {
+        el.addEventListener("input", refreshCounters);
+      });
+
+      refreshCounters();
+      previewImageEl.src = drawPoster("不是开业，是", "开场", "Q", "一起开场");
+      previewImageEl.style.display = "block";
+    </script>
+  </body>
+</html>

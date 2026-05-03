@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="750" height="1334" viewBox="0 0 750 1334">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#35260a"/>
+      <stop offset="35%" stop-color="#121212"/>
+      <stop offset="100%" stop-color="#090a0d"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="rgba(255,189,97,0.16)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </linearGradient>
+    <style>
+      .brand { fill: #d8c07a; font: italic 700 32px "Arial"; letter-spacing: 1px; }
+      .title { fill: #f2f2f2; font: 700 88px "Songti SC", "STSong", serif; letter-spacing: 2px; }
+      .line { stroke: #bf8849; stroke-width: 1.2; opacity: .8; }
+      .minor { fill: #efefef; font: 600 52px "Songti SC", "STSong", serif; }
+      .guest { fill: #d6b652; font: 800 92px "Arial"; }
+      .goldDate { fill: #c9aa50; font: 700 62px "Arial"; letter-spacing: 1px; }
+      .time { fill: #dddddd; font: 700 46px "Arial"; letter-spacing: 1px; }
+      .addr { fill: #e6e6e6; font: 500 42px "PingFang SC", "Noto Sans SC", sans-serif; }
+      .noteTitle { fill: #c8a94c; font: 700 33px "PingFang SC", sans-serif; }
+      .noteText { fill: #cfcfcf; font: 500 25px "PingFang SC", sans-serif; }
+      .footer { fill: #efefef; font: 700 40px "Arial"; letter-spacing: .5px; }
+      .small { fill: #b8943d; font: 600 26px "PingFang SC", sans-serif; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="750" height="1334" fill="url(#bg)"/>
+  <rect x="0" y="0" width="750" height="520" fill="url(#panel)"/>
+
+  <g opacity=".22">
+    <rect x="20" y="18" width="42" height="328" fill="#ffb53d"/>
+    <rect x="86" y="28" width="42" height="328" fill="#ffb53d"/>
+    <rect x="152" y="18" width="42" height="328" fill="#ffb53d"/>
+    <rect x="218" y="28" width="42" height="328" fill="#ffb53d"/>
+    <rect x="284" y="18" width="42" height="328" fill="#ffb53d"/>
+    <rect x="350" y="28" width="42" height="328" fill="#ffb53d"/>
+    <rect x="416" y="18" width="42" height="328" fill="#ffb53d"/>
+    <rect x="482" y="28" width="42" height="328" fill="#ffb53d"/>
+    <rect x="548" y="18" width="42" height="328" fill="#ffb53d"/>
+    <rect x="614" y="28" width="42" height="328" fill="#ffb53d"/>
+    <rect x="680" y="18" width="42" height="328" fill="#ffb53d"/>
+  </g>
+
+  <text class="brand" x="52" y="86">CHRONOBREWERY</text>
+  <text class="title" x="375" y="516" text-anchor="middle">不是开业，是开场</text>
+
+  <line class="line" x1="140" y1="598" x2="610" y2="598"/>
+  <text class="minor" x="140" y="686" text-anchor="start">诚 邀</text>
+  <text class="guest" x="375" y="704" text-anchor="middle">Q</text>
+  <text class="minor" x="610" y="686" text-anchor="end">一起开场</text>
+  <line class="line" x1="140" y1="760" x2="610" y2="760"/>
+
+  <text class="goldDate" x="375" y="846" text-anchor="middle">2026.5.20～2026.5.21</text>
+  <text class="time" x="375" y="913" text-anchor="middle">14:00～18:00pm</text>
+  <text class="addr" x="375" y="985" text-anchor="middle">深圳 南山 沙河西路 智谷产业园F座 107</text>
+
+  <rect x="95" y="1060" width="130" height="170" fill="rgba(255,255,255,.05)"/>
+  <text class="small" x="160" y="1156" text-anchor="middle">酒杯示意</text>
+
+  <rect x="255" y="1080" width="150" height="150" fill="#f8f8f8" stroke="#101010" stroke-width="8"/>
+  <g stroke="#222" stroke-width="5">
+    <line x1="272" y1="1098" x2="272" y2="1212"/>
+    <line x1="307" y1="1098" x2="307" y2="1212"/>
+    <line x1="342" y1="1098" x2="342" y2="1212"/>
+    <line x1="377" y1="1098" x2="377" y2="1212"/>
+    <line x1="272" y1="1098" x2="388" y2="1098"/>
+    <line x1="272" y1="1133" x2="388" y2="1133"/>
+    <line x1="272" y1="1168" x2="388" y2="1168"/>
+    <line x1="272" y1="1203" x2="388" y2="1203"/>
+  </g>
+
+  <text class="noteTitle" x="440" y="1122">领取说明</text>
+  <text class="noteText" x="440" y="1166">1. 扫码进入领取页</text>
+  <text class="noteText" x="440" y="1206">2. 如未注册会员，请先完成注册</text>
+  <text class="noteText" x="440" y="1246">3. 注册完成后，返回海报扫码领取</text>
+
+  <text class="footer" x="375" y="1298" text-anchor="middle">CHRONOBREWERY</text>
+</svg>

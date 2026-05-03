@@ -27,7 +27,7 @@
 - 前端与轻量后端：Next.js 14（App Router + API Routes）
 - 存储与处理：腾讯云 COS + 数据万象（CI）
 - 部署：Vercel + GitHub
-- 域名：`photo.dbbrewbeer.com`（后台入口 `/admin`）
+- 域名：`run.dbbrewbeer.com`（后台入口 `/admin`）
 
 ## 环境变量（建议）
 
@@ -37,8 +37,8 @@
 - `TENCENT_SECRET_KEY`
 - `WATERMARK_IMAGE_KEY`（默认 `watermark/logo.png`）
 - `WATERMARK_TEXT`（可选，留空则不叠加文字水印）
-- `ADMIN_USERNAME`
 - `ADMIN_PASSWORD`
+- `ADMIN_USERNAME`（可选，仅用于后台显示名）
 - `SESSION_SECRET`
 - `NEXT_PUBLIC_SITE_URL`
 - `NEXT_PUBLIC_ACTIVITY_SLUG`
