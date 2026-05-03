@@ -98,6 +98,10 @@ function toUidString(uid: string | number | undefined) {
   return String(uid).trim();
 }
 
+function isNumericUid(value: string) {
+  return /^\d+$/.test(value);
+}
+
 async function postPospal<T>(config: YinbaoConfig, path: string, bodyObj: Record<string, unknown>) {
   const timestamp = String(Date.now());
   const body = stringifyBody(bodyObj);
@@ -155,7 +159,21 @@ async function postPospal<T>(config: YinbaoConfig, path: string, bodyObj: Record
 async function resolveCouponUids(config: YinbaoConfig) {
   let uid40 = config.couponUid40.trim();
   let uid20 = config.couponUid20.trim();
-  if (uid40 && uid20) {
+
+  // Support misconfiguration where coupon name is mistakenly set in UID env var.
+  // If UID fields are non-numeric, treat them as candidate names and resolve from Pospal.
+  const uid40LooksNumeric = isNumericUid(uid40);
+  const uid20LooksNumeric = isNumericUid(uid20);
+  if (uid40 && !uid40LooksNumeric && !config.couponName40.trim()) {
+    config.couponName40 = uid40;
+    uid40 = "";
+  }
+  if (uid20 && !uid20LooksNumeric && !config.couponName20.trim()) {
+    config.couponName20 = uid20;
+    uid20 = "";
+  }
+
+  if (uid40 && uid20 && isNumericUid(uid40) && isNumericUid(uid20)) {
     return { ok: true as const, uid40, uid20 };
   }
 
@@ -195,6 +213,14 @@ async function resolveCouponUids(config: YinbaoConfig) {
       raw: {
         availableNames: promotions.map((item) => item.name).filter(Boolean)
       }
+    };
+  }
+
+  if (!isNumericUid(uid40) || !isNumericUid(uid20)) {
+    return {
+      ok: false as const,
+      message:
+        "券规则UID格式无效：POSPAL_COUPON_UID_40/20 必须是纯数字 Long。若想按券名称匹配，请改填 POSPAL_COUPON_NAME_40/20。"
     };
   }
 
