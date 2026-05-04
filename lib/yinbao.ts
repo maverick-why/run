@@ -252,9 +252,14 @@ async function resolveCouponUids(config: YinbaoConfig) {
 function extractCustomerUid(raw: unknown) {
   if (!raw || typeof raw !== "object") return "";
   const obj = raw as Record<string, unknown>;
-  const candidates = [obj.customerUid, obj.uid, obj.customeruid];
+  const candidates = [obj.customerUid, obj.customrUid, obj.uid, obj.customeruid];
   for (const c of candidates) {
     const text = toUidString(c as string | number | undefined);
+    if (isNumericUid(text)) return text;
+  }
+  for (const [k, v] of Object.entries(obj)) {
+    if (!/customr?uid|customeruid|uid/i.test(k)) continue;
+    const text = toUidString(v as string | number | undefined);
     if (isNumericUid(text)) return text;
   }
   return "";
