@@ -151,7 +151,9 @@ export async function POST(request: NextRequest) {
       outcome: "approved_issued",
       item: updated
     });
-  } catch {
-    return NextResponse.json({ success: false, error: "审核通过操作失败" }, { status: 500 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "审核通过操作失败";
+    console.error("[run-voucher/approve] unexpected error:", error);
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
