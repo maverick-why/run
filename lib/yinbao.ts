@@ -116,7 +116,10 @@ function isNumericUid(value: string) {
 
 async function postPospal<T>(config: YinbaoConfig, path: string, bodyObj: Record<string, unknown>) {
   const timestamp = String(Date.now());
-  const body = stringifyBody(bodyObj);
+  const payloadObj = Object.prototype.hasOwnProperty.call(bodyObj, "appId")
+    ? bodyObj
+    : { ...bodyObj, appId: config.appId };
+  const body = stringifyBody(payloadObj);
   const signature = computeSignatureV3(config.appId, config.appKey, timestamp, body);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), config.requestTimeoutMs);
@@ -126,8 +129,10 @@ async function postPospal<T>(config: YinbaoConfig, path: string, bodyObj: Record
       method: "POST",
       headers: {
         appId: config.appId,
+        "User-Agent": config.userAgent,
         UserAgent: config.userAgent,
         "time-stamp": timestamp,
+        "data-signature": signature,
         "data-signature-v3": signature,
         "Content-Type": "application/json; charset=utf-8"
       },
