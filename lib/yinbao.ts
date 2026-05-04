@@ -31,6 +31,15 @@ type CouponPromotion = {
   enable?: string | number;
 };
 
+function parsePospalPayloadPreserveLong(text: string) {
+  // Preserve long integer IDs (especially *Uid fields) as strings to avoid JS precision loss.
+  const normalized = text.replace(
+    /("(?:[A-Za-z0-9_]*[Uu]id)"\s*:\s*)(-?\d{16,})/g,
+    '$1"$2"'
+  );
+  return JSON.parse(normalized) as PospalResponse<unknown>;
+}
+
 function readYinbaoConfig(): YinbaoConfig {
   const appId = process.env.POSPAL_APP_ID || "";
   const appKey = process.env.POSPAL_APP_KEY || "";
@@ -123,7 +132,8 @@ async function postPospal<T>(config: YinbaoConfig, path: string, bodyObj: Record
       signal: controller.signal
     });
 
-    const payload = (await response.json().catch(() => null)) as PospalResponse<T> | null;
+    const text = await response.text();
+    const payload = (text ? parsePospalPayloadPreserveLong(text) : null) as PospalResponse<T> | null;
     if (!response.ok || !payload) {
       return {
         ok: false,
