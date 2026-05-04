@@ -6,6 +6,7 @@ type YinbaoConfig = {
   appKey: string;
   areaId: string;
   userAgent: string;
+  groupShare: number;
   couponUid40: string;
   couponUid20: string;
   couponName40: string;
@@ -45,6 +46,7 @@ function readYinbaoConfig(): YinbaoConfig {
   const appKey = process.env.POSPAL_APP_KEY || "";
   const areaId = process.env.POSPAL_AREA_ID || "1";
   const userAgent = process.env.POSPAL_USER_AGENT || "openApi";
+  const groupShare = Number(process.env.POSPAL_GROUP_SHARE || "1");
   const couponUid40 = process.env.POSPAL_COUPON_UID_40 || "";
   const couponUid20 = process.env.POSPAL_COUPON_UID_20 || "";
   const couponName40 = process.env.POSPAL_COUPON_NAME_40 || "";
@@ -56,6 +58,7 @@ function readYinbaoConfig(): YinbaoConfig {
     appKey,
     areaId,
     userAgent,
+    groupShare,
     couponUid40,
     couponUid20,
     couponName40,
@@ -241,10 +244,63 @@ async function resolveCouponUids(config: YinbaoConfig) {
   return { ok: true as const, uid40, uid20 };
 }
 
+function extractCustomerUid(raw: unknown) {
+  if (!raw || typeof raw !== "object") return "";
+  const obj = raw as Record<string, unknown>;
+  const candidates = [obj.customerUid, obj.uid, obj.customeruid];
+  for (const c of candidates) {
+    const text = toUidString(c as string | number | undefined);
+    if (isNumericUid(text)) return text;
+  }
+  return "";
+}
+
+async function resolveCustomerUid(config: YinbaoConfig, customerInput: string) {
+  const normalized = customerInput.trim();
+  if (!isNumericUid(normalized)) {
+    return {
+      ok: false as const,
+      message: "会员UID/会员编号必须是纯数字"
+    };
+  }
+
+  const byUid = await postPospal<Record<string, unknown>>(config, "/customerOpenApi/queryByUid", {
+    customerUid: normalized,
+    groupShare: config.groupShare
+  });
+  if (byUid.ok) {
+    const uid = extractCustomerUid(byUid.data);
+    if (uid) {
+      return { ok: true as const, customerUid: uid };
+    }
+  }
+
+  const byNumber = await postPospal<Record<string, unknown>>(config, "/customerOpenApi/queryByNumber", {
+    customerNum: normalized,
+    groupShare: config.groupShare
+  });
+  if (byNumber.ok) {
+    const uid = extractCustomerUid(byNumber.data);
+    if (uid) {
+      return { ok: true as const, customerUid: uid };
+    }
+  }
+
+  return {
+    ok: false as const,
+    message:
+      "未找到该会员。请确认填写的是银豹会员UID或会员编号，且与当前 POSPAL_APP_ID 同租户（可尝试 POSPAL_GROUP_SHARE=1）。",
+    raw: {
+      byUid: byUid.raw,
+      byNumber: byNumber.raw
+    }
+  };
+}
+
 export async function issueVoucherToYinbao(params: {
   submission: SubmissionRecord;
   grantPlan: GrantPlan;
-  customerUid?: number;
+  customerUid?: string | number;
 }): Promise<YinbaoIssueResult> {
   const { submission, grantPlan } = params;
   const config = readYinbaoConfig();
@@ -274,11 +330,11 @@ export async function issueVoucherToYinbao(params: {
     };
   }
 
-  const customerUid = params.customerUid || submission.customerUid;
-  if (!customerUid || !Number.isFinite(customerUid)) {
+  const customerInput = toUidString((params.customerUid as string | number | undefined) || submission.customerUid);
+  if (!customerInput || !isNumericUid(customerInput)) {
     return {
       success: false,
-      message: "缺少 customerUid，无法发券。请在审核时填写银豹会员UID。"
+      message: "缺少会员UID/会员编号，无法发券。请在审核时填写纯数字。"
     };
   }
 
@@ -293,6 +349,12 @@ export async function issueVoucherToYinbao(params: {
   if (!resolved.ok) {
     return { success: false, message: resolved.message, raw: resolved.raw };
   }
+
+  const resolvedCustomer = await resolveCustomerUid(config, customerInput);
+  if (!resolvedCustomer.ok) {
+    return { success: false, message: resolvedCustomer.message, raw: resolvedCustomer.raw };
+  }
+  const customerUid = resolvedCustomer.customerUid;
 
   const couponUidSequence = buildCouponUidSequence(grantPlan, {
     ...config,

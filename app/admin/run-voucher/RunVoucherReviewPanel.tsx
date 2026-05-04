@@ -93,15 +93,9 @@ export function RunVoucherReviewPanel({ reviewer }: { reviewer: string }) {
     setError("");
     setNotice("");
     const customerUidText = (customerUidMap[item.recordKey] || "").trim();
-    const customerUid = customerUidText ? Number(customerUidText) : undefined;
     if (item.km >= 100 && item.km < 300) {
-      if (
-        !customerUidText ||
-        customerUid === undefined ||
-        !Number.isFinite(customerUid) ||
-        customerUid <= 0
-      ) {
-        setError("请先填写正确的 customerUid（银豹会员UID）");
+      if (!customerUidText || !/^\d+$/.test(customerUidText)) {
+        setError("请先填写纯数字会员UID/会员编号");
         setApprovingKey("");
         return;
       }
@@ -114,7 +108,7 @@ export function RunVoucherReviewPanel({ reviewer }: { reviewer: string }) {
         },
         body: JSON.stringify({
           recordKey: item.recordKey,
-          customerUid
+          customerUid: customerUidText || undefined
         })
       });
       const payload = (await response.json().catch(() => null)) as ApproveResponse | null;
@@ -222,7 +216,7 @@ export function RunVoucherReviewPanel({ reviewer }: { reviewer: string }) {
                         [item.recordKey]: event.target.value
                       }))
                     }
-                    placeholder="填写 customerUid（银豹会员UID）"
+                    placeholder="填写会员UID/会员编号（纯数字）"
                     style={{ maxWidth: 260 }}
                     value={customerUidMap[item.recordKey] || ""}
                   />

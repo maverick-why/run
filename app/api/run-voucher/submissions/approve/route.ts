@@ -12,7 +12,7 @@ import { issueVoucherToYinbao } from "@/lib/yinbao";
 type ApprovePayload = {
   recordKey?: string;
   note?: string;
-  customerUid?: number | string;
+  customerUid?: string;
 };
 
 export const runtime = "nodejs";
@@ -26,13 +26,7 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as ApprovePayload | null;
   const recordKey = body?.recordKey?.trim();
   const note = body?.note?.trim();
-  const customerUidRaw = body?.customerUid;
-  const customerUid =
-    typeof customerUidRaw === "number"
-      ? customerUidRaw
-      : typeof customerUidRaw === "string" && customerUidRaw.trim()
-        ? Number(customerUidRaw)
-        : undefined;
+  const customerUidInput = body?.customerUid?.trim();
   if (!recordKey) {
     return NextResponse.json({ success: false, error: "recordKey is required" }, { status: 400 });
   }
@@ -108,11 +102,11 @@ export async function POST(request: NextRequest) {
     const issueResult = await issueVoucherToYinbao({
       submission: record,
       grantPlan,
-      customerUid: Number.isFinite(customerUid) ? customerUid : record.customerUid
+      customerUid: customerUidInput || record.customerUid
     });
     const updated = {
       ...record,
-      customerUid: Number.isFinite(customerUid) ? customerUid : record.customerUid,
+      customerUid: customerUidInput || record.customerUid,
       status: issueResult.success ? ("approved" as const) : ("issue_failed" as const),
       reviewedAt: nowIso,
       reviewedBy: session.username,
