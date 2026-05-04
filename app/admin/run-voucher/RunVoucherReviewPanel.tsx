@@ -111,9 +111,15 @@ export function RunVoucherReviewPanel({ reviewer }: { reviewer: string }) {
           customerUid: customerUidText || undefined
         })
       });
-      const payload = (await response.json().catch(() => null)) as ApproveResponse | null;
+      const raw = await response.text();
+      let payload: ApproveResponse | null = null;
+      try {
+        payload = raw ? (JSON.parse(raw) as ApproveResponse) : null;
+      } catch {
+        payload = null;
+      }
       if (!response.ok || !payload?.success) {
-        throw new Error(payload?.error || "审核失败");
+        throw new Error(payload?.error || raw.slice(0, 240) || `审核失败（HTTP ${response.status}）`);
       }
       setNotice("审核已完成，记录状态已更新");
       await load();

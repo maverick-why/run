@@ -17,6 +17,20 @@ type ApprovePayload = {
 
 export const runtime = "nodejs";
 
+function stringifyUnknownError(error: unknown) {
+  if (error instanceof Error) {
+    return `${error.name}: ${error.message}`;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
 export async function POST(request: NextRequest) {
   const session = getSessionFromCookies();
   if (!session) {
@@ -152,8 +166,8 @@ export async function POST(request: NextRequest) {
       item: updated
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "审核通过操作失败";
+    const message = stringifyUnknownError(error);
     console.error("[run-voucher/approve] unexpected error:", error);
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return NextResponse.json({ success: false, error: `审核通过操作失败：${message}` }, { status: 500 });
   }
 }
