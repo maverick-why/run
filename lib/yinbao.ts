@@ -164,12 +164,16 @@ async function resolveCouponUids(config: YinbaoConfig) {
   // If UID fields are non-numeric, treat them as candidate names and resolve from Pospal.
   const uid40LooksNumeric = isNumericUid(uid40);
   const uid20LooksNumeric = isNumericUid(uid20);
-  if (uid40 && !uid40LooksNumeric && !config.couponName40.trim()) {
-    config.couponName40 = uid40;
+  if (uid40 && !uid40LooksNumeric) {
+    if (!config.couponName40.trim()) {
+      config.couponName40 = uid40;
+    }
     uid40 = "";
   }
-  if (uid20 && !uid20LooksNumeric && !config.couponName20.trim()) {
-    config.couponName20 = uid20;
+  if (uid20 && !uid20LooksNumeric) {
+    if (!config.couponName20.trim()) {
+      config.couponName20 = uid20;
+    }
     uid20 = "";
   }
 
