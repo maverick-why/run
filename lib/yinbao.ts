@@ -291,10 +291,13 @@ async function resolveCustomerUid(config: YinbaoConfig, customerInput: string) {
     }
   }
 
+  // Fallback: some environments do not expose customer query APIs consistently.
+  // Try issuing coupon directly with the input numeric value and let addCouponcode be the final authority.
   return {
-    ok: false as const,
-    message:
-      "未找到该会员。请确认填写的是银豹会员UID或会员编号，且与当前 POSPAL_APP_ID 同租户（可尝试 POSPAL_GROUP_SHARE=1）。",
+    ok: true as const,
+    customerUid: normalized,
+    lookupWarning:
+      "会员查询接口未查到记录，已回退为直接使用输入值发券。若仍失败，请确认会员归属门店/租户。",
     raw: {
       byUid: byUid.raw,
       byNumber: byNumber.raw
@@ -357,7 +360,7 @@ export async function issueVoucherToYinbao(params: {
 
   const resolvedCustomer = await resolveCustomerUid(config, customerInput);
   if (!resolvedCustomer.ok) {
-    return { success: false, message: resolvedCustomer.message, raw: resolvedCustomer.raw };
+    return { success: false, message: resolvedCustomer.message, raw: resolvedCustomer };
   }
   const customerUid = resolvedCustomer.customerUid;
 
@@ -405,10 +408,13 @@ export async function issueVoucherToYinbao(params: {
   return {
     success: true,
     referenceId: `${submission.id}:${customerUid}`,
-    message: `已发放${issuedCoupons.length}张优惠券号`,
+    message: resolvedCustomer.lookupWarning
+      ? `已发放${issuedCoupons.length}张优惠券号（提示：${resolvedCustomer.lookupWarning}）`
+      : `已发放${issuedCoupons.length}张优惠券号`,
     raw: {
       customerUid,
-      issuedCoupons
+      issuedCoupons,
+      lookupWarning: resolvedCustomer.lookupWarning
     }
   };
 }
