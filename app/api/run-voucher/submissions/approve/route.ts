@@ -27,6 +27,8 @@ export async function POST(request: NextRequest) {
   const recordKey = body?.recordKey?.trim();
   const note = body?.note?.trim();
   const customerUidInput = body?.customerUid?.trim();
+  const parsedInputUid =
+    customerUidInput && /^\d+$/.test(customerUidInput) ? Number(customerUidInput) : undefined;
   if (!recordKey) {
     return NextResponse.json({ success: false, error: "recordKey is required" }, { status: 400 });
   }
@@ -55,6 +57,14 @@ export async function POST(request: NextRequest) {
 
     const grantPlan = calculateGrantPlan(record.km);
     const nowIso = new Date().toISOString();
+    const fallbackUid =
+      typeof record.customerUid === "number"
+        ? record.customerUid
+        : typeof (record as { customerUid?: unknown }).customerUid === "string" &&
+            /^\d+$/.test((record as { customerUid?: string }).customerUid || "")
+          ? Number((record as { customerUid?: string }).customerUid)
+          : undefined;
+    const customerUidValue = Number.isFinite(parsedInputUid) ? parsedInputUid : fallbackUid;
 
     if (grantPlan.mode === "none") {
       const updated = {
@@ -102,11 +112,11 @@ export async function POST(request: NextRequest) {
     const issueResult = await issueVoucherToYinbao({
       submission: record,
       grantPlan,
-      customerUid: customerUidInput || record.customerUid
+      customerUid: customerUidInput || (customerUidValue ? String(customerUidValue) : undefined)
     });
     const updated = {
       ...record,
-      customerUid: customerUidInput || record.customerUid,
+      customerUid: customerUidValue,
       status: issueResult.success ? ("approved" as const) : ("issue_failed" as const),
       reviewedAt: nowIso,
       reviewedBy: session.username,
