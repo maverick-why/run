@@ -4,6 +4,8 @@ import { type GrantPlan, type SubmissionRecord, type YinbaoIssueResult } from "@
 type YinbaoConfig = {
   appId: string;
   appKey: string;
+  queryAppId: string;
+  queryAppKey: string;
   areaId: string;
   userAgent: string;
   groupShare: number;
@@ -44,6 +46,8 @@ function parsePospalPayloadPreserveLong(text: string) {
 function readYinbaoConfig(): YinbaoConfig {
   const appId = process.env.POSPAL_APP_ID || "";
   const appKey = process.env.POSPAL_APP_KEY || "";
+  const queryAppId = process.env.POSPAL_QUERY_APP_ID || appId;
+  const queryAppKey = process.env.POSPAL_QUERY_APP_KEY || appKey;
   const areaId = process.env.POSPAL_AREA_ID || "1";
   const userAgent = process.env.POSPAL_USER_AGENT || "openApi";
   const groupShare = Number(process.env.POSPAL_GROUP_SHARE || "1");
@@ -56,6 +60,8 @@ function readYinbaoConfig(): YinbaoConfig {
   return {
     appId,
     appKey,
+    queryAppId,
+    queryAppKey,
     areaId,
     userAgent,
     groupShare,
@@ -115,12 +121,29 @@ function isNumericUid(value: string) {
 }
 
 async function postPospal<T>(config: YinbaoConfig, path: string, bodyObj: Record<string, unknown>) {
+  return postPospalWithCredential(
+    {
+      appId: config.appId,
+      appKey: config.appKey
+    },
+    config,
+    path,
+    bodyObj
+  );
+}
+
+async function postPospalWithCredential<T>(
+  credential: { appId: string; appKey: string },
+  config: YinbaoConfig,
+  path: string,
+  bodyObj: Record<string, unknown>
+) {
   const timestamp = String(Date.now());
   const payloadObj = Object.prototype.hasOwnProperty.call(bodyObj, "appId")
     ? bodyObj
-    : { ...bodyObj, appId: config.appId };
+    : { ...bodyObj, appId: credential.appId };
   const body = stringifyBody(payloadObj);
-  const signature = computeSignatureV3(config.appId, config.appKey, timestamp, body);
+  const signature = computeSignatureV3(credential.appId, credential.appKey, timestamp, body);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), config.requestTimeoutMs);
 
@@ -128,7 +151,7 @@ async function postPospal<T>(config: YinbaoConfig, path: string, bodyObj: Record
     const response = await fetch(`https://openapi${config.areaId}.pospal.cn/openinterface${path}`, {
       method: "POST",
       headers: {
-        appId: config.appId,
+        appId: credential.appId,
         "User-Agent": config.userAgent,
         UserAgent: config.userAgent,
         "time-stamp": timestamp,
@@ -274,10 +297,20 @@ async function resolveCustomerUid(config: YinbaoConfig, customerInput: string) {
     };
   }
 
-  const byUid = await postPospal<Record<string, unknown>>(config, "/customerOpenApi/queryByUid", {
-    customerUid: normalized,
-    groupShare: config.groupShare
-  });
+  const queryCredential = {
+    appId: config.queryAppId,
+    appKey: config.queryAppKey
+  };
+
+  const byUid = await postPospalWithCredential<Record<string, unknown>>(
+    queryCredential,
+    config,
+    "/customerOpenApi/queryByUid",
+    {
+      customerUid: normalized,
+      groupShare: config.groupShare
+    }
+  );
   if (byUid.ok) {
     const uid = extractCustomerUid(byUid.data);
     if (uid) {
@@ -285,10 +318,15 @@ async function resolveCustomerUid(config: YinbaoConfig, customerInput: string) {
     }
   }
 
-  const byNumber = await postPospal<Record<string, unknown>>(config, "/customerOpenApi/queryByNumber", {
-    customerNum: normalized,
-    groupShare: config.groupShare
-  });
+  const byNumber = await postPospalWithCredential<Record<string, unknown>>(
+    queryCredential,
+    config,
+    "/customerOpenApi/queryByNumber",
+    {
+      customerNum: normalized,
+      groupShare: config.groupShare
+    }
+  );
   if (byNumber.ok) {
     const uid = extractCustomerUid(byNumber.data);
     if (uid) {
@@ -296,13 +334,10 @@ async function resolveCustomerUid(config: YinbaoConfig, customerInput: string) {
     }
   }
 
-  // Fallback: some environments do not expose customer query APIs consistently.
-  // Try issuing coupon directly with the input numeric value and let addCouponcode be the final authority.
   return {
-    ok: true as const,
-    customerUid: normalized,
-    lookupWarning:
-      "会员查询接口未查到记录，已回退为直接使用输入值发券。若仍失败，请确认会员归属门店/租户。",
+    ok: false as const,
+    message:
+      "未找到该会员。请填写银豹 customerUid，或使用总部凭证通过 queryByNumber 可查到该会员后再发券。",
     raw: {
       byUid: byUid.raw,
       byNumber: byNumber.raw
@@ -357,6 +392,12 @@ export async function issueVoucherToYinbao(params: {
       message: "缺少 POSPAL_APP_ID 或 POSPAL_APP_KEY 配置"
     };
   }
+  if (!config.queryAppId || !config.queryAppKey) {
+    return {
+      success: false,
+      message: "缺少 POSPAL_QUERY_APP_ID 或 POSPAL_QUERY_APP_KEY 配置（会员查询需总部凭证）"
+    };
+  }
 
   const resolved = await resolveCouponUids(config);
   if (!resolved.ok) {
@@ -406,20 +447,17 @@ export async function issueVoucherToYinbao(params: {
     issuedCoupons.push({
       code,
       promotionCouponUid,
-      codeExpiredDate: result.data?.codeExpiredDate
+      codeExpiredDate: (result.data as AddedCouponResult | undefined)?.codeExpiredDate
     });
   }
 
   return {
     success: true,
     referenceId: `${submission.id}:${customerUid}`,
-    message: resolvedCustomer.lookupWarning
-      ? `已发放${issuedCoupons.length}张优惠券号（提示：${resolvedCustomer.lookupWarning}）`
-      : `已发放${issuedCoupons.length}张优惠券号`,
+    message: `已发放${issuedCoupons.length}张优惠券号`,
     raw: {
       customerUid,
-      issuedCoupons,
-      lookupWarning: resolvedCustomer.lookupWarning
+      issuedCoupons
     }
   };
 }
