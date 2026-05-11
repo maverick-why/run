@@ -32,6 +32,7 @@ type CouponPromotion = {
   promotionCouponUid?: string | number;
   name?: string;
   enable?: string | number;
+  createUserAppId?: string;
 };
 
 function parsePospalPayloadPreserveLong(text: string) {
@@ -219,7 +220,13 @@ async function resolveCouponUids(config: YinbaoConfig) {
   }
 
   if (uid40 && uid20 && isNumericUid(uid40) && isNumericUid(uid20)) {
-    return { ok: true as const, uid40, uid20 };
+    return {
+      ok: true as const,
+      uid40,
+      uid20,
+      issuerAppId40: "",
+      issuerAppId20: ""
+    };
   }
 
   const name40 = normalizeName(config.couponName40);
@@ -242,13 +249,17 @@ async function resolveCouponUids(config: YinbaoConfig) {
   }
 
   const promotions = Array.isArray(queryResult.data) ? queryResult.data : [];
+  let issuerAppId40 = "";
+  let issuerAppId20 = "";
   if (!uid40) {
     const matched40 = promotions.find((item) => normalizeName(item.name || "") === name40);
     uid40 = toUidString(matched40?.promotionCouponUid);
+    issuerAppId40 = (matched40?.createUserAppId || "").trim();
   }
   if (!uid20) {
     const matched20 = promotions.find((item) => normalizeName(item.name || "") === name20);
     uid20 = toUidString(matched20?.promotionCouponUid);
+    issuerAppId20 = (matched20?.createUserAppId || "").trim();
   }
 
   if (!uid40 || !uid20) {
@@ -269,7 +280,7 @@ async function resolveCouponUids(config: YinbaoConfig) {
     };
   }
 
-  return { ok: true as const, uid40, uid20 };
+  return { ok: true as const, uid40, uid20, issuerAppId40, issuerAppId20 };
 }
 
 function extractCustomerUid(raw: unknown) {
@@ -402,6 +413,22 @@ export async function issueVoucherToYinbao(params: {
   const resolved = await resolveCouponUids(config);
   if (!resolved.ok) {
     return { success: false, message: resolved.message, raw: resolved.raw };
+  }
+  const issuerMismatch = [resolved.issuerAppId40, resolved.issuerAppId20]
+    .filter((v) => v && v !== config.appId)
+    .filter((v, idx, arr) => arr.indexOf(v) === idx);
+  if (issuerMismatch.length > 0) {
+    return {
+      success: false,
+      message:
+        `券规则所属门店与当前发券 appId 不一致。当前 appId=${config.appId}，券规则 createUserAppId=` +
+        issuerMismatch.join(",") +
+        "。请改用创建该券规则的门店 appId/appKey 发券。",
+      raw: {
+        currentAppId: config.appId,
+        couponIssuerAppIds: issuerMismatch
+      }
+    };
   }
 
   const resolvedCustomer = await resolveCustomerUid(config, customerInput);
