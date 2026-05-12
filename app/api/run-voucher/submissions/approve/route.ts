@@ -7,7 +7,7 @@ import {
   loadSubmissionRecordByKey,
   saveSubmissionRecord
 } from "@/lib/run-voucher";
-import { issueVoucherToYinbao } from "@/lib/yinbao";
+import { issueVoucherToYinbao, lookupMemberByPhone } from "@/lib/yinbao";
 
 type ApprovePayload = {
   recordKey?: string;
@@ -67,11 +67,11 @@ export async function POST(request: NextRequest) {
 
     const grantPlan = calculateGrantPlan(record.km);
     const nowIso = new Date().toISOString();
-    const customerNumValue =
+    let customerNumValue =
       typeof record.customerNum === "string" && /^\d+$/.test(record.customerNum)
         ? record.customerNum
         : undefined;
-    const customerUidValue =
+    let customerUidValue =
       typeof record.customerUid === "string" && /^\d+$/.test(record.customerUid)
         ? record.customerUid
         : undefined;
@@ -120,10 +120,20 @@ export async function POST(request: NextRequest) {
     }
 
     if (grantPlan.mode === "voucher" && !customerNumValue) {
-      return NextResponse.json(
-        { success: false, error: "记录缺少会员编号（customerNum），请用户重新提交并完成手机号会员绑定" },
-        { status: 400 }
-      );
+      const fallbackByPhone = await lookupMemberByPhone(record.contact || "");
+      if (fallbackByPhone.ok) {
+        customerNumValue = fallbackByPhone.customerNum;
+        customerUidValue = fallbackByPhone.customerUid || customerUidValue;
+      } else {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "记录里缺少会员编号（customerNum），且无法从手机号自动关联会员。请让用户在前台完成“关联会员”后重新提交。"
+          },
+          { status: 400 }
+        );
+      }
     }
 
     const issueResult = await issueVoucherToYinbao({
@@ -137,6 +147,7 @@ export async function POST(request: NextRequest) {
         : customerUidValue;
     const updated = {
       ...record,
+      customerNum: customerNumValue || record.customerNum,
       customerUid: resolvedUid || record.customerUid,
       status: issueResult.success ? ("approved" as const) : ("issue_failed" as const),
       reviewedAt: nowIso,
