@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
           {
             success: false,
             error:
-              "记录里缺少会员编号（customerNum），且无法从手机号自动关联会员。请让用户在前台完成“关联会员”后重新提交。"
+              "记录里缺少会员编号（customerNum），且无法从手机号自动关联会员。请核对手机号是否为银豹会员绑定手机号。"
           },
           { status: 400 }
         );

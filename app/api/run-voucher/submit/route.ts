@@ -7,6 +7,7 @@ import {
   normalizeSubmissionMonth,
   type SubmissionRecord
 } from "@/lib/run-voucher";
+import { lookupMemberByPhone } from "@/lib/yinbao";
 import { resolveImageExtension } from "@/lib/upload";
 
 const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
@@ -42,8 +43,6 @@ export async function POST(request: NextRequest) {
 
   const name = String(formData.get("name") || "").trim();
   const contact = String(formData.get("contact") || "").trim();
-  const customerNum = String(formData.get("customerNum") || "").trim();
-  const customerUid = String(formData.get("customerUid") || "").trim();
   const kmRaw = String(formData.get("km") || "").trim();
   const screenshotListRaw = formData.getAll("screenshots");
   const legacyScreenshot = formData.get("screenshot");
@@ -54,7 +53,7 @@ export async function POST(request: NextRequest) {
     screenshots.push(legacyScreenshot);
   }
 
-  if (!name || !contact || !customerNum || !kmRaw || screenshots.length === 0) {
+  if (!name || !contact || !kmRaw || screenshots.length === 0) {
     return NextResponse.json(
       { success: false, error: "缺少必填字段，请检查后重试" },
       { status: 400 }
@@ -62,12 +61,6 @@ export async function POST(request: NextRequest) {
   }
   if (screenshots.length > 6) {
     return NextResponse.json({ success: false, error: "最多上传6张截图" }, { status: 400 });
-  }
-  if (!/^\d+$/.test(customerNum)) {
-    return NextResponse.json({ success: false, error: "会员编号（customerNum）格式不正确" }, { status: 400 });
-  }
-  if (customerUid && !/^\d+$/.test(customerUid)) {
-    return NextResponse.json({ success: false, error: "会员UID格式不正确" }, { status: 400 });
   }
 
   for (const file of screenshots) {
@@ -88,6 +81,14 @@ export async function POST(request: NextRequest) {
   const km = Number(kmRaw);
   if (!Number.isFinite(km) || km < 0) {
     return NextResponse.json({ success: false, error: "跑量数值不合法" }, { status: 400 });
+  }
+
+  const memberLookup = await lookupMemberByPhone(contact);
+  if (!memberLookup.ok) {
+    return NextResponse.json(
+      { success: false, error: memberLookup.message || "手机号未绑定会员，请检查后重试" },
+      { status: 400 }
+    );
   }
 
   let config;
@@ -131,8 +132,8 @@ export async function POST(request: NextRequest) {
     screenshotSizes: screenshotBuffers.map((item) => item.file.size),
     submittedAt: new Date().toISOString(),
     status: "pending",
-    customerNum,
-    customerUid: customerUid || undefined
+    customerNum: memberLookup.customerNum,
+    customerUid: memberLookup.customerUid || undefined
   };
 
   try {

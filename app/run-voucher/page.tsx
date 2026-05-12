@@ -3,9 +3,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type ToastType = "error" | "success";
-type LookupPayload =
-  | { success: true; customerNum: string; customerUid?: string; memberName?: string }
-  | { success: false; error?: string };
 
 const TIER_CARDS = [
   {
@@ -62,11 +59,6 @@ export default function RunVoucherPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [customerNum, setCustomerNum] = useState("");
-  const [customerUid, setCustomerUid] = useState("");
-  const [memberName, setMemberName] = useState("");
-  const [isLookingUpMember, setIsLookingUpMember] = useState(false);
-  const [memberLookupError, setMemberLookupError] = useState("");
   const [km, setKm] = useState("");
   const [month] = useState(getDefaultMonth);
   const [screenshots, setScreenshots] = useState<File[]>([]);
@@ -125,46 +117,6 @@ export default function RunVoucherPage() {
     setPreviewUrls(files.map((file) => URL.createObjectURL(file)));
   }
 
-  async function lookupMember() {
-    const normalized = phone.replace(/\s+/g, "");
-    if (!normalized) {
-      setMemberLookupError("请先填写手机号");
-      setCustomerNum("");
-      setCustomerUid("");
-      setMemberName("");
-      return;
-    }
-    setIsLookingUpMember(true);
-    setMemberLookupError("");
-    try {
-      const response = await fetch("/api/run-voucher/member-lookup", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ phone: normalized })
-      });
-      const payload = (await response.json().catch(() => null)) as LookupPayload | null;
-      if (!response.ok || !payload?.success) {
-        const errorMessage =
-          payload && "error" in payload ? payload.error || "未找到该手机号对应会员" : "未找到该手机号对应会员";
-        setCustomerNum("");
-        setCustomerUid("");
-        setMemberName("");
-        setMemberLookupError(errorMessage);
-        return;
-      }
-      setCustomerNum(payload.customerNum || "");
-      setCustomerUid(payload.customerUid || "");
-      setMemberName(payload.memberName || "");
-      setToast({ type: "success", message: "会员绑定成功" });
-    } catch {
-      setMemberLookupError("查询会员失败，请稍后重试");
-    } finally {
-      setIsLookingUpMember(false);
-    }
-  }
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isSubmitting || submitted) return;
@@ -173,11 +125,6 @@ export default function RunVoucherPage() {
       showError("请完整填写信息并上传跑量截图");
       return;
     }
-    if (!customerNum) {
-      showError("请先输入手机号并完成会员绑定");
-      return;
-    }
-
     const kmValue = Number(km);
     if (!Number.isFinite(kmValue) || kmValue < 0) {
       showError("请填写正确的跑量公里数");
@@ -187,10 +134,6 @@ export default function RunVoucherPage() {
     const formData = new FormData();
     formData.append("name", name.trim());
     formData.append("contact", phone.trim());
-    formData.append("customerNum", customerNum);
-    if (customerUid) {
-      formData.append("customerUid", customerUid);
-    }
     formData.append("km", String(kmValue));
     formData.append("month", month);
     screenshots.forEach((file) => formData.append("screenshots", file));
@@ -274,53 +217,17 @@ export default function RunVoucherPage() {
               </div>
 
               <div className="field">
-                <label htmlFor="contact">手机号（用于关联会员）</label>
-                <div className="lookup-row">
-                  <input
-                    className="input"
-                    id="contact"
-                    inputMode="tel"
-                    maxLength={24}
-                    onBlur={() => {
-                      if (phone.trim() && !customerNum && !isLookingUpMember) {
-                        void lookupMember();
-                      }
-                    }}
-                    onChange={(e) => {
-                      setPhone(e.target.value);
-                      if (customerNum || customerUid || memberName || memberLookupError) {
-                        setCustomerNum("");
-                        setCustomerUid("");
-                        setMemberName("");
-                        setMemberLookupError("");
-                      }
-                    }}
-                    placeholder="请输入会员绑定手机号"
-                    required
-                    value={phone}
-                  />
-                  <button
-                    className="lookup-btn"
-                    disabled={isLookingUpMember}
-                    onClick={() => void lookupMember()}
-                    type="button"
-                  >
-                    {isLookingUpMember ? "查询中..." : "关联会员"}
-                  </button>
-                </div>
-                {memberLookupError ? <p className="helper error">{memberLookupError}</p> : null}
-              </div>
-
-              <div className="field">
-                <label htmlFor="customerNum">会员编号（自动带出，不可修改）</label>
+                <label htmlFor="contact">手机号</label>
                 <input
-                  className="input input-readonly"
-                  id="customerNum"
-                  placeholder="请先输入手机号并关联会员"
-                  readOnly
-                  value={customerNum}
+                  className="input"
+                  id="contact"
+                  inputMode="tel"
+                  maxLength={24}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="请输入会员绑定手机号"
+                  required
+                  value={phone}
                 />
-                {memberName ? <p className="helper">会员姓名：{memberName}</p> : null}
               </div>
 
               <div className="field">
@@ -514,8 +421,7 @@ export default function RunVoucherPage() {
         }
         .upload-btn,
         .submit-btn,
-        .rule-toggle,
-        .lookup-btn {
+        .rule-toggle {
           height: 42px;
           border-radius: 10px;
           border: none;
@@ -526,28 +432,6 @@ export default function RunVoucherPage() {
           background: #1b1b1b;
           color: #fff;
           border: 1px dashed rgba(255, 255, 255, 0.24);
-        }
-        .lookup-row {
-          display: grid;
-          grid-template-columns: 1fr 108px;
-          gap: 8px;
-        }
-        .lookup-btn {
-          background: #2c2c2c;
-          color: #fff;
-          border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-        .lookup-btn:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-        .input-readonly {
-          opacity: 0.88;
-          background: rgba(255, 255, 255, 0.08);
-          border-style: dashed;
-        }
-        .helper.error {
-          color: #ee7f7f;
         }
         .preview-grid {
           display: grid;
