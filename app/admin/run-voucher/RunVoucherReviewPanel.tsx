@@ -39,6 +39,13 @@ function fmtTime(iso?: string) {
   return d.toLocaleString("zh-CN", { hour12: false });
 }
 
+function getScreenshotKeys(item: SubmissionItem) {
+  if (Array.isArray(item.screenshotKeys) && item.screenshotKeys.length > 0) {
+    return item.screenshotKeys;
+  }
+  return item.screenshotKey ? [item.screenshotKey] : [];
+}
+
 export function RunVoucherReviewPanel({ reviewer }: { reviewer: string }) {
   const [status, setStatus] = useState<SubmissionStatus | "all">("pending");
   const [items, setItems] = useState<SubmissionItem[]>([]);
@@ -179,7 +186,8 @@ export function RunVoucherReviewPanel({ reviewer }: { reviewer: string }) {
                 <div>会员编号：{item.customerNum || "-"}</div>
                 <div>会员UID：{item.customerUid || "-"}</div>
                 <div style={{ wordBreak: "break-all" }}>
-                  截图文件：<code>{item.screenshotKey}</code>
+                  截图文件（{getScreenshotKeys(item).length}张）：
+                  <code>{getScreenshotKeys(item).join(", ")}</code>
                 </div>
                 {item.reviewNote ? <div>审核备注：{item.reviewNote}</div> : null}
                 {item.yinbao?.message ? (
@@ -201,11 +209,21 @@ export function RunVoucherReviewPanel({ reviewer }: { reviewer: string }) {
                 <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <button
                     className="btn btn-secondary"
-                    onClick={() => void openScreenshot(item.screenshotKey)}
+                    onClick={() => void openScreenshot(getScreenshotKeys(item)[0] || item.screenshotKey)}
                     type="button"
                   >
-                    查看截图
+                    查看截图1
                   </button>
+                  {getScreenshotKeys(item).slice(1).map((key, idx) => (
+                    <button
+                      key={key}
+                      className="btn btn-secondary"
+                      onClick={() => void openScreenshot(key)}
+                      type="button"
+                    >
+                      查看截图{idx + 2}
+                    </button>
+                  ))}
                   <button
                     className="btn btn-primary"
                     disabled={approvingKey === item.recordKey}

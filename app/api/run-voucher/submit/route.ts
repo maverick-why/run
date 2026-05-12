@@ -45,14 +45,23 @@ export async function POST(request: NextRequest) {
   const customerNum = String(formData.get("customerNum") || "").trim();
   const customerUid = String(formData.get("customerUid") || "").trim();
   const kmRaw = String(formData.get("km") || "").trim();
-  const screenshot = formData.get("screenshot");
+  const screenshotListRaw = formData.getAll("screenshots");
+  const legacyScreenshot = formData.get("screenshot");
   const month = normalizeSubmissionMonth(String(formData.get("month") || ""));
 
-  if (!name || !contact || !customerNum || !kmRaw || !(screenshot instanceof File)) {
+  const screenshots: File[] = screenshotListRaw.filter((item): item is File => item instanceof File);
+  if (screenshots.length === 0 && legacyScreenshot instanceof File) {
+    screenshots.push(legacyScreenshot);
+  }
+
+  if (!name || !contact || !customerNum || !kmRaw || screenshots.length === 0) {
     return NextResponse.json(
       { success: false, error: "缺少必填字段，请检查后重试" },
       { status: 400 }
     );
+  }
+  if (screenshots.length > 6) {
+    return NextResponse.json({ success: false, error: "最多上传6张截图" }, { status: 400 });
   }
   if (!/^\d+$/.test(customerNum)) {
     return NextResponse.json({ success: false, error: "会员编号（customerNum）格式不正确" }, { status: 400 });
@@ -61,18 +70,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "会员UID格式不正确" }, { status: 400 });
   }
 
-  if (!screenshot.type.startsWith("image/")) {
-    return NextResponse.json(
-      { success: false, error: "仅支持图片格式截图" },
-      { status: 400 }
-    );
-  }
-
-  if (screenshot.size > MAX_IMAGE_SIZE_BYTES) {
-    return NextResponse.json(
-      { success: false, error: "截图大小不能超过10MB" },
-      { status: 400 }
-    );
+  for (const file of screenshots) {
+    if (!file.type.startsWith("image/")) {
+      return NextResponse.json(
+        { success: false, error: "仅支持图片格式截图" },
+        { status: 400 }
+      );
+    }
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      return NextResponse.json(
+        { success: false, error: "单张截图大小不能超过10MB" },
+        { status: 400 }
+      );
+    }
   }
 
   const km = Number(kmRaw);
@@ -90,9 +100,21 @@ export async function POST(request: NextRequest) {
 
   const activitySlug = getRunVoucherActivitySlug();
   const submissionId = randomUUID();
-  const ext = resolveImageExtension(screenshot.name, screenshot.type);
+  const first = screenshots[0];
+  const ext = resolveImageExtension(first.name, first.type);
   const objectKeys = buildSubmissionKeys(activitySlug, month, ext, submissionId);
-  const screenshotBuffer = Buffer.from(await screenshot.arrayBuffer());
+  const screenshotBuffers = await Promise.all(
+    screenshots.map(async (file) => ({
+      file,
+      buffer: Buffer.from(await file.arrayBuffer()),
+      ext: resolveImageExtension(file.name, file.type)
+    }))
+  );
+  const screenshotKeys = screenshotBuffers.map((item, idx) =>
+    idx === 0
+      ? objectKeys.screenshot
+      : objectKeys.screenshot.replace(`.${ext}`, `-${String(idx + 1)}.${item.ext}`)
+  );
 
   const record: SubmissionRecord = {
     id: submissionId,
@@ -101,9 +123,12 @@ export async function POST(request: NextRequest) {
     name,
     contact,
     km,
-    screenshotKey: objectKeys.screenshot,
-    screenshotContentType: screenshot.type || "application/octet-stream",
-    screenshotSize: screenshot.size,
+    screenshotKey: screenshotKeys[0],
+    screenshotContentType: first.type || "application/octet-stream",
+    screenshotSize: first.size,
+    screenshotKeys,
+    screenshotContentTypes: screenshotBuffers.map((item) => item.file.type || "application/octet-stream"),
+    screenshotSizes: screenshotBuffers.map((item) => item.file.size),
     submittedAt: new Date().toISOString(),
     status: "pending",
     customerNum,
@@ -112,13 +137,17 @@ export async function POST(request: NextRequest) {
 
   try {
     const cos = createCosClient(config);
-    await putObject(cos, {
-      Bucket: config.bucket,
-      Region: config.region,
-      Key: objectKeys.screenshot,
-      Body: screenshotBuffer,
-      ContentType: screenshot.type || "application/octet-stream"
-    });
+    await Promise.all(
+      screenshotBuffers.map((item, idx) =>
+        putObject(cos, {
+          Bucket: config.bucket,
+          Region: config.region,
+          Key: screenshotKeys[idx],
+          Body: item.buffer,
+          ContentType: item.file.type || "application/octet-stream"
+        })
+      )
+    );
 
     await putObject(cos, {
       Bucket: config.bucket,

@@ -69,14 +69,17 @@ export default function RunVoucherPage() {
   const [memberLookupError, setMemberLookupError] = useState("");
   const [km, setKm] = useState("");
   const [month] = useState(getDefaultMonth);
-  const [screenshot, setScreenshot] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState("");
+  const [screenshots, setScreenshots] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [toast, setToast] = useState<{ type: ToastType; message: string } | null>(null);
 
-  const screenshotName = useMemo(() => screenshot?.name || "", [screenshot]);
+  const screenshotName = useMemo(
+    () => (screenshots.length ? `${screenshots.length} 张截图已选择` : ""),
+    [screenshots]
+  );
 
   useEffect(() => {
     if (!toast) return;
@@ -86,9 +89,9 @@ export default function RunVoucherPage() {
 
   useEffect(() => {
     return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      previewUrls.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [previewUrl]);
+  }, [previewUrls]);
 
   function openFilePicker() {
     fileInputRef.current?.click();
@@ -98,20 +101,28 @@ export default function RunVoucherPage() {
     setToast({ type: "error", message });
   }
 
-  function handleScreenshotChange(file: File | undefined) {
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      showError("仅支持上传图片格式文件");
-      return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      showError("图片大小不能超过 10MB");
+  function handleScreenshotChange(nextFiles: FileList | null) {
+    if (!nextFiles?.length) return;
+    const files = Array.from(nextFiles);
+    if (files.length > 6) {
+      showError("最多上传 6 张截图");
       return;
     }
 
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setScreenshot(file);
-    setPreviewUrl(URL.createObjectURL(file));
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) {
+        showError("仅支持上传图片格式文件");
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        showError("单张图片大小不能超过 10MB");
+        return;
+      }
+    }
+
+    previewUrls.forEach((url) => URL.revokeObjectURL(url));
+    setScreenshots(files);
+    setPreviewUrls(files.map((file) => URL.createObjectURL(file)));
   }
 
   async function lookupMember() {
@@ -158,7 +169,7 @@ export default function RunVoucherPage() {
     event.preventDefault();
     if (isSubmitting || submitted) return;
 
-    if (!name.trim() || !phone.trim() || !km.trim() || !screenshot) {
+    if (!name.trim() || !phone.trim() || !km.trim() || screenshots.length === 0) {
       showError("请完整填写信息并上传跑量截图");
       return;
     }
@@ -182,7 +193,7 @@ export default function RunVoucherPage() {
     }
     formData.append("km", String(kmValue));
     formData.append("month", month);
-    formData.append("screenshot", screenshot);
+    screenshots.forEach((file) => formData.append("screenshots", file));
 
     try {
       setIsSubmitting(true);
@@ -327,22 +338,32 @@ export default function RunVoucherPage() {
               </div>
 
               <div className="field">
-                <label>跑量截图（&lt;=10MB）</label>
+                <label>跑量截图（最多6张，每张&lt;=10MB）</label>
                 <input
                   accept="image/*"
                   hidden
-                  onChange={(e) => handleScreenshotChange(e.target.files?.[0])}
+                  multiple
+                  onChange={(e) => handleScreenshotChange(e.target.files)}
                   ref={fileInputRef}
                   type="file"
                 />
                 <button className="upload-btn" onClick={openFilePicker} type="button">
-                  {screenshot ? "重新选择截图" : "选择跑量截图"}
+                  {screenshots.length ? "重新选择截图" : "选择跑量截图"}
                 </button>
-                {previewUrl ? (
-                  <button className="preview-wrap" onClick={openFilePicker} type="button">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img alt="截图预览" src={previewUrl} />
-                  </button>
+                {previewUrls.length ? (
+                  <div className="preview-grid">
+                    {previewUrls.map((url, idx) => (
+                      <button
+                        key={`${url}-${idx}`}
+                        className="preview-wrap"
+                        onClick={openFilePicker}
+                        type="button"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img alt={`截图预览${idx + 1}`} src={url} />
+                      </button>
+                    ))}
+                  </div>
                 ) : null}
                 {screenshotName ? <p className="helper">{screenshotName}</p> : null}
               </div>
@@ -527,6 +548,11 @@ export default function RunVoucherPage() {
         }
         .helper.error {
           color: #ee7f7f;
+        }
+        .preview-grid {
+          display: grid;
+          gap: 8px;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
         }
         .preview-wrap {
           border: none;

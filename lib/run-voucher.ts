@@ -27,6 +27,9 @@ export type SubmissionRecord = {
   screenshotKey: string;
   screenshotContentType: string;
   screenshotSize: number;
+  screenshotKeys?: string[];
+  screenshotContentTypes?: string[];
+  screenshotSizes?: number[];
   submittedAt: string;
   status: SubmissionStatus;
   reviewedAt?: string;
