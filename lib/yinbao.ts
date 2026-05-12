@@ -98,6 +98,10 @@ function computeSignatureV3(appId: string, appKey: string, timestamp: string, bo
   return createHash("md5").update(`${appId}${appKey}${timestamp}${body}`, "utf8").digest("hex").toUpperCase();
 }
 
+function computeSignatureLegacy(appKey: string, body: string) {
+  return createHash("md5").update(`${appKey}${body}`, "utf8").digest("hex").toUpperCase();
+}
+
 function getMessage(messages: unknown) {
   if (Array.isArray(messages)) {
     return messages.join(" | ");
@@ -144,20 +148,25 @@ async function postPospalWithCredential<T>(
     ? bodyObj
     : { ...bodyObj, appId: credential.appId };
   const body = stringifyBody(payloadObj);
-  const signature = computeSignatureV3(credential.appId, credential.appKey, timestamp, body);
+  const signatureV3 = computeSignatureV3(credential.appId, credential.appKey, timestamp, body);
+  const signatureLegacy = computeSignatureLegacy(credential.appKey, body);
+  const isLegacyCustomerQuery = path === "/customerOpenApi/queryByNumber" || path === "/customerOpenApi/queryByUid";
+  const baseUrl = isLegacyCustomerQuery
+    ? `https://area${config.areaId}-win.pospal.cn:443/pospal-api2/openapi/v1`
+    : `https://openapi${config.areaId}.pospal.cn/openinterface`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), config.requestTimeoutMs);
 
   try {
-    const response = await fetch(`https://openapi${config.areaId}.pospal.cn/openinterface${path}`, {
+    const response = await fetch(`${baseUrl}${path}`, {
       method: "POST",
       headers: {
         appId: credential.appId,
         "User-Agent": config.userAgent,
         UserAgent: config.userAgent,
         "time-stamp": timestamp,
-        "data-signature": signature,
-        "data-signature-v3": signature,
+        "data-signature": signatureLegacy,
+        "data-signature-v3": signatureV3,
         "Content-Type": "application/json; charset=utf-8"
       },
       body,
@@ -313,22 +322,6 @@ async function resolveCustomerUid(config: YinbaoConfig, customerInput: string) {
     appKey: config.queryAppKey
   };
 
-  const byUid = await postPospalWithCredential<Record<string, unknown>>(
-    queryCredential,
-    config,
-    "/customerOpenApi/queryByUid",
-    {
-      customerUid: normalized,
-      groupShare: config.groupShare
-    }
-  );
-  if (byUid.ok) {
-    const uid = extractCustomerUid(byUid.data);
-    if (uid) {
-      return { ok: true as const, customerUid: uid };
-    }
-  }
-
   const byNumber = await postPospalWithCredential<Record<string, unknown>>(
     queryCredential,
     config,
@@ -340,6 +333,22 @@ async function resolveCustomerUid(config: YinbaoConfig, customerInput: string) {
   );
   if (byNumber.ok) {
     const uid = extractCustomerUid(byNumber.data);
+    if (uid) {
+      return { ok: true as const, customerUid: uid };
+    }
+  }
+
+  const byUid = await postPospalWithCredential<Record<string, unknown>>(
+    queryCredential,
+    config,
+    "/customerOpenApi/queryByUid",
+    {
+      customerUid: normalized,
+      groupShare: config.groupShare
+    }
+  );
+  if (byUid.ok) {
+    const uid = extractCustomerUid(byUid.data);
     if (uid) {
       return { ok: true as const, customerUid: uid };
     }
