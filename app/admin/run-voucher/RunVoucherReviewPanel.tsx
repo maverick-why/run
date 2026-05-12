@@ -46,7 +46,6 @@ export function RunVoucherReviewPanel({ reviewer }: { reviewer: string }) {
   const [approvingKey, setApprovingKey] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [customerUidMap, setCustomerUidMap] = useState<Record<string, string>>({});
 
   async function load() {
     setLoading(true);
@@ -76,26 +75,13 @@ export function RunVoucherReviewPanel({ reviewer }: { reviewer: string }) {
     [items]
   );
 
-  useEffect(() => {
-    setCustomerUidMap((prev) => {
-      const next = { ...prev };
-      for (const item of items) {
-        if (!next[item.recordKey] && item.customerUid) {
-          next[item.recordKey] = String(item.customerUid);
-        }
-      }
-      return next;
-    });
-  }, [items]);
-
   async function approve(item: SubmissionItem) {
     setApprovingKey(item.recordKey);
     setError("");
     setNotice("");
-    const customerUidText = (customerUidMap[item.recordKey] || "").trim();
     if (item.km >= 100 && item.km < 300) {
-      if (!customerUidText || !/^\d+$/.test(customerUidText)) {
-        setError("请先填写纯数字会员UID/会员编号");
+      if (!item.customerNum || !/^\d+$/.test(item.customerNum)) {
+        setError("记录里缺少会员编号（customerNum），请让用户在前台重新绑定后再提交");
         setApprovingKey("");
         return;
       }
@@ -107,8 +93,7 @@ export function RunVoucherReviewPanel({ reviewer }: { reviewer: string }) {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          recordKey: item.recordKey,
-          customerUid: customerUidText || undefined
+          recordKey: item.recordKey
         })
       });
       const raw = await response.text();
@@ -191,6 +176,7 @@ export function RunVoucherReviewPanel({ reviewer }: { reviewer: string }) {
                 <div>申请月份：{item.month}</div>
                 <div>状态：{item.status}</div>
                 <div>预期处理：{planText(item.grantPlan)}</div>
+                <div>会员编号：{item.customerNum || "-"}</div>
                 <div>会员UID：{item.customerUid || "-"}</div>
                 <div style={{ wordBreak: "break-all" }}>
                   截图文件：<code>{item.screenshotKey}</code>
@@ -213,19 +199,6 @@ export function RunVoucherReviewPanel({ reviewer }: { reviewer: string }) {
 
               {(item.status === "pending" || item.status === "issue_failed") && (
                 <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <input
-                    className="input"
-                    inputMode="numeric"
-                    onChange={(event) =>
-                      setCustomerUidMap((prev) => ({
-                        ...prev,
-                        [item.recordKey]: event.target.value
-                      }))
-                    }
-                    placeholder="填写会员UID/会员编号（纯数字）"
-                    style={{ maxWidth: 260 }}
-                    value={customerUidMap[item.recordKey] || ""}
-                  />
                   <button
                     className="btn btn-secondary"
                     onClick={() => void openScreenshot(item.screenshotKey)}

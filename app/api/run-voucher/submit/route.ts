@@ -42,15 +42,23 @@ export async function POST(request: NextRequest) {
 
   const name = String(formData.get("name") || "").trim();
   const contact = String(formData.get("contact") || "").trim();
+  const customerNum = String(formData.get("customerNum") || "").trim();
+  const customerUid = String(formData.get("customerUid") || "").trim();
   const kmRaw = String(formData.get("km") || "").trim();
   const screenshot = formData.get("screenshot");
   const month = normalizeSubmissionMonth(String(formData.get("month") || ""));
 
-  if (!name || !contact || !kmRaw || !(screenshot instanceof File)) {
+  if (!name || !contact || !customerNum || !kmRaw || !(screenshot instanceof File)) {
     return NextResponse.json(
       { success: false, error: "缺少必填字段，请检查后重试" },
       { status: 400 }
     );
+  }
+  if (!/^\d+$/.test(customerNum)) {
+    return NextResponse.json({ success: false, error: "会员编号（customerNum）格式不正确" }, { status: 400 });
+  }
+  if (customerUid && !/^\d+$/.test(customerUid)) {
+    return NextResponse.json({ success: false, error: "会员UID格式不正确" }, { status: 400 });
   }
 
   if (!screenshot.type.startsWith("image/")) {
@@ -97,7 +105,9 @@ export async function POST(request: NextRequest) {
     screenshotContentType: screenshot.type || "application/octet-stream",
     screenshotSize: screenshot.size,
     submittedAt: new Date().toISOString(),
-    status: "pending"
+    status: "pending",
+    customerNum,
+    customerUid: customerUid || undefined
   };
 
   try {

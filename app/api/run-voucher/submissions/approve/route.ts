@@ -12,7 +12,6 @@ import { issueVoucherToYinbao } from "@/lib/yinbao";
 type ApprovePayload = {
   recordKey?: string;
   note?: string;
-  customerUid?: string;
 };
 
 export const runtime = "nodejs";
@@ -40,9 +39,6 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as ApprovePayload | null;
   const recordKey = body?.recordKey?.trim();
   const note = body?.note?.trim();
-  const customerUidInput = body?.customerUid?.trim();
-  const parsedInputUid =
-    customerUidInput && /^\d+$/.test(customerUidInput) ? Number(customerUidInput) : undefined;
   if (!recordKey) {
     return NextResponse.json({ success: false, error: "recordKey is required" }, { status: 400 });
   }
@@ -71,14 +67,14 @@ export async function POST(request: NextRequest) {
 
     const grantPlan = calculateGrantPlan(record.km);
     const nowIso = new Date().toISOString();
-    const fallbackUid =
-      typeof record.customerUid === "number"
+    const customerNumValue =
+      typeof record.customerNum === "string" && /^\d+$/.test(record.customerNum)
+        ? record.customerNum
+        : undefined;
+    const customerUidValue =
+      typeof record.customerUid === "string" && /^\d+$/.test(record.customerUid)
         ? record.customerUid
-        : typeof (record as { customerUid?: unknown }).customerUid === "string" &&
-            /^\d+$/.test((record as { customerUid?: string }).customerUid || "")
-          ? Number((record as { customerUid?: string }).customerUid)
-          : undefined;
-    const customerUidValue = Number.isFinite(parsedInputUid) ? parsedInputUid : fallbackUid;
+        : undefined;
 
     if (grantPlan.mode === "none") {
       const updated = {
@@ -123,14 +119,25 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (grantPlan.mode === "voucher" && !customerNumValue) {
+      return NextResponse.json(
+        { success: false, error: "记录缺少会员编号（customerNum），请用户重新提交并完成手机号会员绑定" },
+        { status: 400 }
+      );
+    }
+
     const issueResult = await issueVoucherToYinbao({
       submission: record,
       grantPlan,
-      customerUid: customerUidInput || (customerUidValue ? String(customerUidValue) : undefined)
+      customerUid: customerNumValue || customerUidValue
     });
+    const resolvedUid =
+      typeof (issueResult.raw as { customerUid?: unknown } | undefined)?.customerUid === "string"
+        ? ((issueResult.raw as { customerUid?: string }).customerUid || "")
+        : customerUidValue;
     const updated = {
       ...record,
-      customerUid: customerUidValue,
+      customerUid: resolvedUid || record.customerUid,
       status: issueResult.success ? ("approved" as const) : ("issue_failed" as const),
       reviewedAt: nowIso,
       reviewedBy: session.username,

@@ -35,6 +35,14 @@ type CouponPromotion = {
   createUserAppId?: string;
 };
 
+type MemberShape = {
+  customerNum?: string | number;
+  number?: string | number;
+  customerUid?: string | number;
+  customrUid?: string | number;
+  name?: string;
+};
+
 function parsePospalPayloadPreserveLong(text: string) {
   // Preserve long integer IDs (especially *Uid fields) as strings to avoid JS precision loss.
   const normalized = text.replace(
@@ -150,7 +158,10 @@ async function postPospalWithCredential<T>(
   const body = stringifyBody(payloadObj);
   const signatureV3 = computeSignatureV3(credential.appId, credential.appKey, timestamp, body);
   const signatureLegacy = computeSignatureLegacy(credential.appKey, body);
-  const isLegacyCustomerQuery = path === "/customerOpenApi/queryByNumber" || path === "/customerOpenApi/queryByUid";
+  const isLegacyCustomerQuery =
+    path === "/customerOpenApi/queryByNumber" ||
+    path === "/customerOpenApi/queryByUid" ||
+    path === "/customerOpenapi/queryBytel";
   const baseUrl = isLegacyCustomerQuery
     ? `https://area${config.areaId}-win.pospal.cn:443/pospal-api2/openapi/v1`
     : `https://openapi${config.areaId}.pospal.cn/openinterface`;
@@ -306,6 +317,76 @@ function extractCustomerUid(raw: unknown) {
     if (isNumericUid(text)) return text;
   }
   return "";
+}
+
+function extractCustomerNum(raw: unknown) {
+  if (!raw || typeof raw !== "object") return "";
+  const obj = raw as Record<string, unknown>;
+  const candidates = [obj.customerNum, obj.number, obj.customerNO, obj.customerNo];
+  for (const c of candidates) {
+    const text = toUidString(c as string | number | undefined);
+    if (isNumericUid(text)) return text;
+  }
+  return "";
+}
+
+function pickMember(raw: unknown): MemberShape | null {
+  if (!raw) return null;
+  if (Array.isArray(raw)) {
+    const first = raw.find((item) => item && typeof item === "object");
+    return first && typeof first === "object" ? (first as MemberShape) : null;
+  }
+  if (typeof raw === "object") {
+    return raw as MemberShape;
+  }
+  return null;
+}
+
+function normalizePhoneCandidates(input: string) {
+  const digits = input.replace(/\D/g, "");
+  if (!digits) return [];
+  const local = /^86(1[3-9]\d{9})$/.test(digits) ? digits.slice(2) : digits;
+  return Array.from(new Set([local, digits].filter(Boolean)));
+}
+
+export async function lookupMemberByPhone(phone: string) {
+  const config = readYinbaoConfig();
+  if (!config.queryAppId || !config.queryAppKey) {
+    return { ok: false as const, message: "缺少 POSPAL_QUERY_APP_ID / POSPAL_QUERY_APP_KEY（总部查询凭证）" };
+  }
+  const candidates = normalizePhoneCandidates(phone);
+  if (candidates.length === 0) {
+    return { ok: false as const, message: "手机号格式不正确" };
+  }
+  const queryCredential = {
+    appId: config.queryAppId,
+    appKey: config.queryAppKey
+  };
+
+  for (const customerTel of candidates) {
+    const byTel = await postPospalWithCredential<unknown>(
+      queryCredential,
+      config,
+      "/customerOpenapi/queryBytel",
+      { customerTel, groupShare: config.groupShare }
+    );
+    if (!byTel.ok) continue;
+
+    const member = pickMember(byTel.data);
+    const customerUid = extractCustomerUid(member);
+    const customerNum = extractCustomerNum(member) || customerTel;
+    if (customerUid && customerNum) {
+      return {
+        ok: true as const,
+        customerUid,
+        customerNum,
+        memberName: typeof member?.name === "string" ? member.name : "",
+        raw: byTel.raw
+      };
+    }
+  }
+
+  return { ok: false as const, message: "未查到该手机号对应会员，请确认手机号已绑定会员" };
 }
 
 async function resolveCustomerUid(config: YinbaoConfig, customerInput: string) {

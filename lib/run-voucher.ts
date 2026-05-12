@@ -33,7 +33,8 @@ export type SubmissionRecord = {
   reviewedBy?: string;
   reviewNote?: string;
   grantPlan?: GrantPlan;
-  customerUid?: number;
+  customerUid?: string;
+  customerNum?: string;
   yinbao?: {
     status: "not_required" | "issued" | "failed";
     issuedAt?: string;
