@@ -49,10 +49,19 @@ const RULES = [
 ];
 
 function getDefaultMonth() {
-  const date = new Date();
-  date.setMonth(date.getMonth() - 1);
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${date.getFullYear()}-${month}`;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit"
+  }).formatToParts(new Date());
+  let year = Number(parts.find((part) => part.type === "year")?.value || "0");
+  let month = Number(parts.find((part) => part.type === "month")?.value || "0");
+  month -= 1;
+  if (month <= 0) {
+    month = 12;
+    year -= 1;
+  }
+  return `${year}-${String(month).padStart(2, "0")}`;
 }
 
 export default function RunVoucherPage() {

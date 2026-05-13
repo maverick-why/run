@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createCosClient, readCosConfig } from "@/lib/cos";
 import {
   buildSubmissionKeys,
+  getExpectedSubmissionMonth,
   getRunVoucherActivitySlug,
   normalizeSubmissionMonth,
   type SubmissionRecord
@@ -46,7 +47,9 @@ export async function POST(request: NextRequest) {
   const kmRaw = String(formData.get("km") || "").trim();
   const screenshotListRaw = formData.getAll("screenshots");
   const legacyScreenshot = formData.get("screenshot");
-  const month = normalizeSubmissionMonth(String(formData.get("month") || ""));
+  const submittedMonthRaw = String(formData.get("month") || "").trim();
+  const month = normalizeSubmissionMonth(submittedMonthRaw);
+  const expectedMonth = getExpectedSubmissionMonth();
 
   const screenshots: File[] = screenshotListRaw.filter((item): item is File => item instanceof File);
   if (screenshots.length === 0 && legacyScreenshot instanceof File) {
@@ -56,6 +59,12 @@ export async function POST(request: NextRequest) {
   if (!name || !contact || !kmRaw || screenshots.length === 0) {
     return NextResponse.json(
       { success: false, error: "缺少必填字段，请检查后重试" },
+      { status: 400 }
+    );
+  }
+  if (submittedMonthRaw && submittedMonthRaw !== expectedMonth) {
+    return NextResponse.json(
+      { success: false, error: `仅允许提交上一个自然月数据（当前应为 ${expectedMonth}）` },
       { status: 400 }
     );
   }

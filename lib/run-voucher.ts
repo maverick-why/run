@@ -56,14 +56,34 @@ export function getRunVoucherActivitySlug() {
   return process.env.NEXT_PUBLIC_ACTIVITY_SLUG || "default";
 }
 
+function getShanghaiYearMonth(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit"
+  }).formatToParts(date);
+  const year = Number(parts.find((part) => part.type === "year")?.value || "0");
+  const month = Number(parts.find((part) => part.type === "month")?.value || "0");
+  return { year, month };
+}
+
+export function getExpectedSubmissionMonth(date = new Date()) {
+  const { year, month } = getShanghaiYearMonth(date);
+  let y = year;
+  let m = month - 1;
+  if (m <= 0) {
+    y -= 1;
+    m = 12;
+  }
+  return `${y}-${String(m).padStart(2, "0")}`;
+}
+
 export function normalizeSubmissionMonth(raw: string | null) {
-  if (raw && /^\d{4}-(0[1-9]|1[0-2])$/.test(raw)) {
+  const expected = getExpectedSubmissionMonth();
+  if (raw && /^\d{4}-(0[1-9]|1[0-2])$/.test(raw) && raw === expected) {
     return raw;
   }
-  const date = new Date();
-  date.setMonth(date.getMonth() - 1);
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${date.getFullYear()}-${month}`;
+  return expected;
 }
 
 export function buildSubmissionKeys(activitySlug: string, month: string, ext: string, id: string) {
