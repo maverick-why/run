@@ -12,6 +12,7 @@ import { issueVoucherToYinbao, lookupMemberByPhone } from "@/lib/yinbao";
 type ApprovePayload = {
   recordKey?: string;
   note?: string;
+  action?: "approve" | "reject";
 };
 
 export const runtime = "nodejs";
@@ -39,6 +40,7 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as ApprovePayload | null;
   const recordKey = body?.recordKey?.trim();
   const note = body?.note?.trim();
+  const action = body?.action === "reject" ? "reject" : "approve";
   if (!recordKey) {
     return NextResponse.json({ success: false, error: "recordKey is required" }, { status: 400 });
   }
@@ -60,7 +62,7 @@ export async function POST(request: NextRequest) {
 
     if (record.status !== "pending" && record.status !== "issue_failed") {
       return NextResponse.json(
-        { success: false, error: `当前状态为 ${record.status}，不可重复审核通过` },
+        { success: false, error: `当前状态为 ${record.status}，不可重复审核` },
         { status: 409 }
       );
     }
@@ -75,6 +77,27 @@ export async function POST(request: NextRequest) {
       typeof record.customerUid === "string" && /^\d+$/.test(record.customerUid)
         ? record.customerUid
         : undefined;
+
+    if (action === "reject") {
+      const updated = {
+        ...record,
+        status: "rejected" as const,
+        reviewedAt: nowIso,
+        reviewedBy: session.username,
+        reviewNote: note || "人工审核拒绝",
+        grantPlan,
+        yinbao: {
+          status: "not_required" as const,
+          message: "审核拒绝，未发券"
+        }
+      };
+      await saveSubmissionRecord({ cos, config, key: recordKey, record: updated });
+      return NextResponse.json({
+        success: true,
+        outcome: "rejected_manual",
+        item: updated
+      });
+    }
 
     if (grantPlan.mode === "none") {
       const updated = {

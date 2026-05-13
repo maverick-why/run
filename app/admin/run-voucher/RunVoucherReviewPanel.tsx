@@ -122,6 +122,40 @@ export function RunVoucherReviewPanel({ reviewer }: { reviewer: string }) {
     }
   }
 
+  async function reject(item: SubmissionItem) {
+    setApprovingKey(item.recordKey);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/run-voucher/submissions/approve", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          recordKey: item.recordKey,
+          action: "reject"
+        })
+      });
+      const raw = await response.text();
+      let payload: ApproveResponse | null = null;
+      try {
+        payload = raw ? (JSON.parse(raw) as ApproveResponse) : null;
+      } catch {
+        payload = null;
+      }
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error || raw.slice(0, 240) || `拒绝失败（HTTP ${response.status}）`);
+      }
+      setNotice("已拒绝该申请，记录状态已更新");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "拒绝失败");
+    } finally {
+      setApprovingKey("");
+    }
+  }
+
   async function openScreenshot(key: string) {
     try {
       const response = await fetch(`/api/run-voucher/screenshot-url?key=${encodeURIComponent(key)}`);
@@ -231,6 +265,18 @@ export function RunVoucherReviewPanel({ reviewer }: { reviewer: string }) {
                     type="button"
                   >
                     {approvingKey === item.recordKey ? "处理中..." : "审核通过并通知银豹发券"}
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    disabled={approvingKey === item.recordKey}
+                    onClick={() => {
+                      if (window.confirm("确认拒绝这条申请吗？")) {
+                        void reject(item);
+                      }
+                    }}
+                    type="button"
+                  >
+                    拒绝
                   </button>
                 </div>
               )}
