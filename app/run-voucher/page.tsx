@@ -93,13 +93,23 @@ export default function RunVoucherPage() {
     setToast({ type: "error", message });
   }
 
+  function removeScreenshotAt(index: number) {
+    if (index < 0 || index >= screenshots.length) return;
+    const removedUrl = previewUrls[index];
+    if (removedUrl) URL.revokeObjectURL(removedUrl);
+    setScreenshots((prev) => prev.filter((_, i) => i !== index));
+    setPreviewUrls((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function clearScreenshots() {
+    previewUrls.forEach((url) => URL.revokeObjectURL(url));
+    setScreenshots([]);
+    setPreviewUrls([]);
+  }
+
   function handleScreenshotChange(nextFiles: FileList | null) {
     if (!nextFiles?.length) return;
     const files = Array.from(nextFiles);
-    if (files.length > 6) {
-      showError("最多上传 6 张截图");
-      return;
-    }
 
     for (const file of files) {
       if (!file.type.startsWith("image/")) {
@@ -112,9 +122,26 @@ export default function RunVoucherPage() {
       }
     }
 
+    const merged: File[] = [];
+    const seen = new Set<string>();
+    const pushUnique = (file: File) => {
+      const key = `${file.name}:${file.size}:${file.lastModified}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      merged.push(file);
+    };
+
+    screenshots.forEach(pushUnique);
+    files.forEach(pushUnique);
+
+    if (merged.length > 6) {
+      showError("最多上传 6 张截图");
+      return;
+    }
+
     previewUrls.forEach((url) => URL.revokeObjectURL(url));
-    setScreenshots(files);
-    setPreviewUrls(files.map((file) => URL.createObjectURL(file)));
+    setScreenshots(merged);
+    setPreviewUrls(merged.map((file) => URL.createObjectURL(file)));
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -250,25 +277,43 @@ export default function RunVoucherPage() {
                   accept="image/*"
                   hidden
                   multiple
-                  onChange={(e) => handleScreenshotChange(e.target.files)}
+                  onChange={(e) => {
+                    handleScreenshotChange(e.target.files);
+                    e.currentTarget.value = "";
+                  }}
                   ref={fileInputRef}
                   type="file"
                 />
-                <button className="upload-btn" onClick={openFilePicker} type="button">
-                  {screenshots.length ? "重新选择截图" : "选择跑量截图"}
-                </button>
+                <div className="upload-row">
+                  <button className="upload-btn" onClick={openFilePicker} type="button">
+                    {screenshots.length ? "继续添加截图" : "选择跑量截图"}
+                  </button>
+                  {screenshots.length ? (
+                    <button className="clear-btn" onClick={clearScreenshots} type="button">
+                      清空
+                    </button>
+                  ) : null}
+                </div>
                 {previewUrls.length ? (
                   <div className="preview-grid">
                     {previewUrls.map((url, idx) => (
-                      <button
-                        key={`${url}-${idx}`}
-                        className="preview-wrap"
-                        onClick={openFilePicker}
-                        type="button"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img alt={`截图预览${idx + 1}`} src={url} />
-                      </button>
+                      <div key={`${url}-${idx}`} className="preview-item">
+                        <button
+                          className="preview-wrap"
+                          onClick={openFilePicker}
+                          type="button"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img alt={`截图预览${idx + 1}`} src={url} />
+                        </button>
+                        <button
+                          className="remove-thumb-btn"
+                          onClick={() => removeScreenshotAt(idx)}
+                          type="button"
+                        >
+                          删除
+                        </button>
+                      </div>
                     ))}
                   </div>
                 ) : null}
@@ -433,10 +478,28 @@ export default function RunVoucherPage() {
           color: #fff;
           border: 1px dashed rgba(255, 255, 255, 0.24);
         }
+        .upload-row {
+          display: flex;
+          gap: 8px;
+        }
+        .clear-btn {
+          height: 42px;
+          border-radius: 10px;
+          border: 1px solid rgba(255, 255, 255, 0.24);
+          background: transparent;
+          color: #fff;
+          padding: 0 14px;
+          font-weight: 700;
+          cursor: pointer;
+        }
         .preview-grid {
           display: grid;
           gap: 8px;
           grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+        .preview-item {
+          display: grid;
+          gap: 6px;
         }
         .preview-wrap {
           border: none;
@@ -452,6 +515,15 @@ export default function RunVoucherPage() {
           border: 1px solid rgba(255, 255, 255, 0.18);
           max-height: 220px;
           object-fit: cover;
+        }
+        .remove-thumb-btn {
+          height: 30px;
+          border-radius: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.22);
+          background: transparent;
+          color: rgba(255, 255, 255, 0.88);
+          cursor: pointer;
+          font-size: 12px;
         }
         .submit-btn {
           background: #ff4500;
