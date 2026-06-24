@@ -82,6 +82,7 @@ const RULES = [
 
 export default function RunVoucherPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const verifyInputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [km, setKm] = useState("");
@@ -91,7 +92,11 @@ export default function RunVoucherPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
-  const [nonMemberPhone, setNonMemberPhone] = useState<string | null>(null);
+  // 会员验证弹窗
+  const [verifyOpen, setVerifyOpen] = useState(false);
+  const [dialCode, setDialCode] = useState("+86");
+  const [rawPhone, setRawPhone] = useState("");
+  const [verifyStatus, setVerifyStatus] = useState<null | "checking" | "ok" | "fail">(null);
   const [toast, setToast] = useState<{
     type: "error" | "success";
     message: string;
@@ -176,22 +181,12 @@ export default function RunVoucherPage() {
     fd.append("km", String(kmVal));
     fd.append("month", month);
     screenshots.forEach((f) => fd.append("screenshots", f));
+    if (verifyStatus !== "ok") {
+      setVerifyOpen(true);
+      return;
+    }
     try {
       setIsSubmitting(true);
-      try {
-        const lookupRes = await fetch("/api/run-voucher/member-lookup", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone: phone.trim() }),
-        });
-        if (lookupRes.status === 404) {
-          setNonMemberPhone(phone.trim());
-          setIsSubmitting(false);
-          return;
-        }
-      } catch {
-        // 网络异常时不拦截，交由后台审核
-      }
       const res = await fetch("/api/run-voucher/submit", {
         method: "POST",
         body: fd,
@@ -225,11 +220,48 @@ export default function RunVoucherPage() {
     }
   }
 
+  function openVerify() {
+    setVerifyStatus(null);
+    setRawPhone("");
+    setVerifyOpen(true);
+    setTimeout(() => verifyInputRef.current?.focus(), 300);
+  }
+
+  function isVerifyValid() {
+    const v = rawPhone.trim();
+    return dialCode === "+86" ? /^1[3-9]\d{9}$/.test(v) : /^\d{6,14}$/.test(v);
+  }
+
+  async function handleVerify() {
+    const p = rawPhone.trim();
+    if (!p) return;
+    const fullPhone = dialCode + p;
+    setVerifyStatus("checking");
+    try {
+      const res = await fetch("/api/run-voucher/member-lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: fullPhone }),
+      });
+      if (res.ok) {
+        setPhone(fullPhone);
+        setVerifyStatus("ok");
+      } else {
+        setVerifyStatus("fail");
+      }
+    } catch {
+      setVerifyStatus(null);
+      showError("网络异常，请稍后重试");
+    }
+  }
+
   function resetForm() {
     setSubmitted(false);
     setName("");
     setPhone("");
     setKm("");
+    setVerifyStatus(null);
+    setRawPhone("");
     clearAll();
   }
 
@@ -358,15 +390,14 @@ export default function RunVoucherPage() {
                 <div className="field">
                   <label htmlFor="contact" className="field-label">
                     会员手机号
+                    {verifyStatus === "ok" && <span className="member-badge">✓ 已验证</span>}
                   </label>
                   <input
-                    className="input"
+                    className={`input${verifyStatus === "ok" ? " input-verified" : ""}`}
                     id="contact"
-                    inputMode="tel"
-                    maxLength={24}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="请输入手机号"
-                    required
+                    readOnly
+                    onClick={openVerify}
+                    placeholder="点击验证会员身份"
                     value={phone}
                   />
                 </div>
@@ -469,35 +500,127 @@ export default function RunVoucherPage() {
         </footer>
       </section>
 
-      {nonMemberPhone && (
-        <div className="nm-mask" onClick={() => setNonMemberPhone(null)}>
-          <div className="nm-sheet" onClick={(e) => e.stopPropagation()}>
-            <div className="nm-handle" />
-            <div className="nm-body">
-              <div className="nm-icon">🍺</div>
-              <div className="nm-title">仅限会员参与</div>
-              <p className="nm-desc">
-                未找到 <strong>{nonMemberPhone}</strong> 的会员记录。<br />
-                请先在小程序完成注册，成为会员后即可参与兑换。
-              </p>
-            </div>
-            <div className="nm-actions">
-              <a
-                className="nm-btn-primary"
-                href="https://pospal.cn/d/3736013"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                前往注册会员 →
-              </a>
-              <button
-                className="nm-btn-ghost"
-                onClick={() => setNonMemberPhone(null)}
-                type="button"
-              >
-                重新输入手机号
-              </button>
-            </div>
+      {verifyOpen && (
+        <div
+          className="vm-mask"
+          onClick={() => { if (verifyStatus !== "checking") setVerifyOpen(false); }}
+        >
+          <div className="vm-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="vm-handle" />
+
+            {/* 状态1：输入手机号 */}
+            {verifyStatus !== "ok" && verifyStatus !== "fail" && (
+              <>
+                <div className="vm-top">
+                  <div className="vm-label">MEMBER VERIFICATION · 会员验证</div>
+                  <div className="vm-title">验证会员身份</div>
+                  <div className="vm-sub">本活动仅限时光酿造所会员参与</div>
+                </div>
+                <div className="vm-input-area">
+                  <div className="vm-input-label">手机号</div>
+                  <div className={`vm-input-row${verifyStatus === "checking" ? " vm-checking" : ""}`}>
+                    <select
+                      className="vm-dial-select"
+                      value={dialCode}
+                      onChange={(e) => setDialCode(e.target.value)}
+                      disabled={verifyStatus === "checking"}
+                    >
+                      <option value="+86">+86 🇨🇳 中国大陆</option>
+                      <option value="+852">+852 🇭🇰 香港</option>
+                      <option value="+853">+853 🇲🇴 澳門</option>
+                      <option value="+886">+886 🇹🇼 臺灣</option>
+                      <option value="+62">+62 🇮🇩 Indonesia</option>
+                      <option disabled>──────</option>
+                      <option value="+65">+65 🇸🇬 Singapore</option>
+                      <option value="+60">+60 🇲🇾 Malaysia</option>
+                      <option value="+1">+1 🇺🇸 United States / Canada</option>
+                      <option value="+44">+44 🇬🇧 United Kingdom</option>
+                      <option value="+61">+61 🇦🇺 Australia</option>
+                      <option value="+81">+81 🇯🇵 日本</option>
+                      <option value="+82">+82 🇰🇷 한국</option>
+                    </select>
+                    <div className="vm-sep" />
+                    <input
+                      ref={verifyInputRef}
+                      className="vm-input"
+                      type="tel"
+                      inputMode="tel"
+                      placeholder="请输入手机号"
+                      value={rawPhone}
+                      onChange={(e) => setRawPhone(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter" && isVerifyValid()) handleVerify(); }}
+                      disabled={verifyStatus === "checking"}
+                      autoComplete="tel"
+                    />
+                  </div>
+                </div>
+                <div className="vm-actions">
+                  <button
+                    className="vm-btn-main"
+                    onClick={handleVerify}
+                    disabled={!isVerifyValid() || verifyStatus === "checking"}
+                    type="button"
+                  >
+                    {verifyStatus === "checking" ? "查询中…" : isVerifyValid() ? "查询会员" : rawPhone.length === 0 ? "请输入手机号" : dialCode === "+86" && rawPhone.length < 11 ? "请输入11位手机号" : "手机号格式不正确"}
+                  </button>
+                  <button className="vm-btn-ghost" onClick={() => setVerifyOpen(false)} type="button">
+                    取消
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* 状态2：验证通过 */}
+            {verifyStatus === "ok" && (
+              <>
+                <div className="vm-top">
+                  <div className="vm-label">MEMBER VERIFIED · 验证通过</div>
+                  <div className="vm-ok-card">
+                    <div className="vm-ok-badge">✓</div>
+                    <div className="vm-ok-info">
+                      <div className="vm-ok-name">会员验证通过</div>
+                      <div className="vm-ok-phone">{phone.length > 7 ? phone.slice(0, 5) + "****" + phone.slice(-4) : phone}</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="vm-actions">
+                  <button className="vm-btn-main vm-btn-green" onClick={() => setVerifyOpen(false)} type="button">
+                    开始填写 →
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* 状态3：非会员 */}
+            {verifyStatus === "fail" && (
+              <>
+                <div className="vm-nonmember">
+                  <div className="vm-nonmember-icon">🍺</div>
+                  <div className="vm-nonmember-title">仅限会员参与</div>
+                  <div className="vm-nonmember-body">
+                    未找到该手机号的会员记录。<br />
+                    请先在小程序完成注册，成为会员后即可参与兑换。
+                  </div>
+                </div>
+                <div className="vm-actions">
+                  <a
+                    className="vm-btn-main vm-btn-reg"
+                    href="https://pospal.cn/d/3736013"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    前往注册 →
+                  </a>
+                  <button
+                    className="vm-btn-ghost"
+                    onClick={() => { setVerifyStatus(null); setRawPhone(""); setTimeout(() => verifyInputRef.current?.focus(), 100); }}
+                    type="button"
+                  >
+                    重新输入手机号
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -982,84 +1105,205 @@ export default function RunVoucherPage() {
           color: #fff;
         }
 
-        /* ── 非会员弹窗 ── */
-        .nm-mask {
+        /* ── 会员验证弹窗 ── */
+        .member-badge {
+          margin-left: 6px;
+          font-size: 11px;
+          font-weight: 700;
+          color: #2e7d32;
+          background: #e8f5e9;
+          border-radius: 20px;
+          padding: 2px 7px;
+        }
+        .input-verified {
+          border-color: #2e7d32 !important;
+          background: #f8fff8 !important;
+          cursor: pointer;
+        }
+        .input[readonly] { cursor: pointer; }
+        .vm-mask {
           position: fixed;
-          top: 0;
-          right: 0;
-          bottom: 0;
-          left: 0;
+          top: 0; right: 0; bottom: 0; left: 0;
           z-index: 200;
-          background: rgba(0, 0, 0, 0.6);
+          background: rgba(0, 0, 0, 0.5);
+          backdrop-filter: blur(3px);
           display: flex;
           align-items: flex-end;
           justify-content: center;
         }
-        .nm-sheet {
-          background: #111;
-          border: 1px solid #222;
+        .vm-sheet {
+          background: #faf8f5;
           width: 100%;
           max-width: 480px;
           border-radius: 20px 20px 0 0;
           padding: 0 0 48px;
+          overflow: hidden;
         }
-        .nm-handle {
+        .vm-handle {
           width: 36px;
           height: 4px;
           border-radius: 2px;
-          background: #333;
+          background: #e0dbd4;
           margin: 14px auto 0;
         }
-        .nm-body {
-          text-align: center;
-          padding: 28px 24px 8px;
+        .vm-top {
+          padding: 18px 20px 16px;
+          border-bottom: 1px solid #e8e3dc;
         }
-        .nm-icon {
-          font-size: 44px;
-          margin-bottom: 12px;
+        .vm-label {
+          font-size: 11px;
+          letter-spacing: 0.15em;
+          color: #b8afa6;
+          margin-bottom: 4px;
         }
-        .nm-title {
-          font-size: 18px;
-          font-weight: 700;
-          color: #fff;
+        .vm-title {
+          font-size: 17px;
+          font-weight: 900;
+          color: #2d2520;
           letter-spacing: 2px;
-          margin-bottom: 10px;
+          margin-bottom: 3px;
         }
-        .nm-desc {
-          font-size: 14px;
-          color: #8a9ab2;
-          line-height: 1.8;
+        .vm-sub {
+          font-size: 12px;
+          color: #b8b0a4;
+          letter-spacing: 0.3px;
         }
-        .nm-desc strong {
-          color: #ccc;
+        .vm-input-area {
+          padding: 16px 20px 0;
         }
-        .nm-actions {
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-          padding: 20px 24px 0;
+        .vm-input-label {
+          font-size: 12px;
+          font-weight: 600;
+          color: #8a7e74;
+          margin-bottom: 8px;
+          letter-spacing: 0.05em;
         }
-        .nm-btn-primary {
+        .vm-input-row {
           display: flex;
           align-items: center;
-          justify-content: center;
+          background: #fff;
+          border: 1.5px solid #e8e3dc;
+          border-radius: 10px;
+          padding: 12px 14px;
+          gap: 8px;
+          transition: border-color 0.2s;
+        }
+        .vm-input-row:focus-within { border-color: #c8922a; }
+        .vm-checking { border-color: #e8b070; background: #fffdf8; }
+        .vm-dial-select {
+          border: none;
+          outline: none;
+          background: transparent;
+          font-family: inherit;
+          font-size: 14px;
+          color: #2d2520;
+          cursor: pointer;
+          flex-shrink: 0;
+          max-width: 130px;
+        }
+        .vm-sep {
+          width: 1px;
+          height: 18px;
+          background: #e0dbd4;
+          flex-shrink: 0;
+        }
+        .vm-input {
+          flex: 1;
+          border: none;
+          outline: none;
+          background: transparent;
+          font-family: inherit;
+          font-size: 17px;
+          font-weight: 700;
+          color: #c8922a;
+          letter-spacing: 2px;
+          min-width: 0;
+        }
+        .vm-input::placeholder { font-size: 13px; color: #d4cfc7; font-weight: 400; letter-spacing: 0.5px; }
+        .vm-actions {
+          padding: 16px 20px 0;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .vm-btn-main {
+          width: 100%;
           height: 50px;
           border-radius: 12px;
-          background: linear-gradient(135deg, #ff6b00, #ff4500);
+          border: none;
+          background: #2d2520;
           color: #fff;
           font-size: 15px;
           font-weight: 700;
+          cursor: pointer;
+          font-family: inherit;
           letter-spacing: 1px;
+          transition: opacity 0.15s;
           text-decoration: none;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
-        .nm-btn-ghost {
+        .vm-btn-main:disabled { opacity: 0.45; cursor: not-allowed; }
+        .vm-btn-main:not(:disabled):active { opacity: 0.8; }
+        .vm-btn-green { background: #2e7d32; }
+        .vm-btn-reg { background: linear-gradient(135deg, #c9975b, #b8874d); }
+        .vm-btn-ghost {
           background: none;
           border: none;
-          color: #8a9ab2;
+          color: #8a7e74;
           font-size: 14px;
           cursor: pointer;
           font-family: inherit;
           padding: 8px;
+          text-align: center;
+        }
+        .vm-ok-card {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          margin-top: 12px;
+        }
+        .vm-ok-badge {
+          width: 44px;
+          height: 44px;
+          border-radius: 50%;
+          background: #2e7d32;
+          color: #fff;
+          font-size: 22px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .vm-ok-name {
+          font-size: 15px;
+          font-weight: 700;
+          color: #2e7d32;
+        }
+        .vm-ok-phone {
+          font-size: 13px;
+          color: #8a7e74;
+          margin-top: 2px;
+          letter-spacing: 1px;
+        }
+        .vm-nonmember {
+          text-align: center;
+          padding: 28px 20px 8px;
+        }
+        .vm-nonmember-icon { font-size: 42px; margin-bottom: 12px; }
+        .vm-nonmember-title {
+          font-size: 16px;
+          font-weight: 900;
+          color: #2d2520;
+          letter-spacing: 2px;
+          margin-bottom: 8px;
+        }
+        .vm-nonmember-body {
+          font-size: 13px;
+          color: #5a5048;
+          line-height: 1.8;
+          letter-spacing: 0.3px;
         }
 
         @media (max-width: 400px) {
