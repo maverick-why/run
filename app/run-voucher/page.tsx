@@ -91,6 +91,7 @@ export default function RunVoucherPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [nonMemberPhone, setNonMemberPhone] = useState<string | null>(null);
   const [toast, setToast] = useState<{
     type: "error" | "success";
     message: string;
@@ -177,6 +178,20 @@ export default function RunVoucherPage() {
     screenshots.forEach((f) => fd.append("screenshots", f));
     try {
       setIsSubmitting(true);
+      try {
+        const lookupRes = await fetch("/api/run-voucher/member-lookup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: phone.trim() }),
+        });
+        if (lookupRes.status === 404) {
+          setNonMemberPhone(phone.trim());
+          setIsSubmitting(false);
+          return;
+        }
+      } catch {
+        // 网络异常时不拦截，交由后台审核
+      }
       const res = await fetch("/api/run-voucher/submit", {
         method: "POST",
         body: fd,
@@ -453,6 +468,39 @@ export default function RunVoucherPage() {
           时光酿造所 · CHRONO BREWERY · 深圳
         </footer>
       </section>
+
+      {nonMemberPhone && (
+        <div className="nm-mask" onClick={() => setNonMemberPhone(null)}>
+          <div className="nm-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="nm-handle" />
+            <div className="nm-body">
+              <div className="nm-icon">🍺</div>
+              <div className="nm-title">仅限会员参与</div>
+              <p className="nm-desc">
+                未找到 <strong>{nonMemberPhone}</strong> 的会员记录。<br />
+                请先在小程序完成注册，成为会员后即可参与兑换。
+              </p>
+            </div>
+            <div className="nm-actions">
+              <a
+                className="nm-btn-primary"
+                href="https://pospal.cn/d/3736013"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                前往注册会员 →
+              </a>
+              <button
+                className="nm-btn-ghost"
+                onClick={() => setNonMemberPhone(null)}
+                type="button"
+              >
+                重新输入手机号
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div className={`toast toast-${toast.type}`}>{toast.message}</div>
@@ -932,6 +980,86 @@ export default function RunVoucherPage() {
           background: #173525;
           border: 1px solid #43cc7b;
           color: #fff;
+        }
+
+        /* ── 非会员弹窗 ── */
+        .nm-mask {
+          position: fixed;
+          top: 0;
+          right: 0;
+          bottom: 0;
+          left: 0;
+          z-index: 200;
+          background: rgba(0, 0, 0, 0.6);
+          display: flex;
+          align-items: flex-end;
+          justify-content: center;
+        }
+        .nm-sheet {
+          background: #111;
+          border: 1px solid #222;
+          width: 100%;
+          max-width: 480px;
+          border-radius: 20px 20px 0 0;
+          padding: 0 0 48px;
+        }
+        .nm-handle {
+          width: 36px;
+          height: 4px;
+          border-radius: 2px;
+          background: #333;
+          margin: 14px auto 0;
+        }
+        .nm-body {
+          text-align: center;
+          padding: 28px 24px 8px;
+        }
+        .nm-icon {
+          font-size: 44px;
+          margin-bottom: 12px;
+        }
+        .nm-title {
+          font-size: 18px;
+          font-weight: 700;
+          color: #fff;
+          letter-spacing: 2px;
+          margin-bottom: 10px;
+        }
+        .nm-desc {
+          font-size: 14px;
+          color: #8a9ab2;
+          line-height: 1.8;
+        }
+        .nm-desc strong {
+          color: #ccc;
+        }
+        .nm-actions {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          padding: 20px 24px 0;
+        }
+        .nm-btn-primary {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          height: 50px;
+          border-radius: 12px;
+          background: linear-gradient(135deg, #ff6b00, #ff4500);
+          color: #fff;
+          font-size: 15px;
+          font-weight: 700;
+          letter-spacing: 1px;
+          text-decoration: none;
+        }
+        .nm-btn-ghost {
+          background: none;
+          border: none;
+          color: #8a9ab2;
+          font-size: 14px;
+          cursor: pointer;
+          font-family: inherit;
+          padding: 8px;
         }
 
         @media (max-width: 400px) {
